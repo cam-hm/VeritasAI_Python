@@ -12,8 +12,36 @@
         <div class="max-w-6xl mx-auto">
             <!-- Header -->
             <div class="mb-6">
-                <h1 class="text-3xl font-bold mb-2">Documents</h1>
-                <a href="/" class="text-blue-600 hover:underline">← Back to Home</a>
+                <div class="flex justify-between items-center mb-2">
+                    <h1 class="text-3xl font-bold">Documents</h1>
+                    <a href="/" class="text-blue-600 hover:underline">← Back to Home</a>
+                </div>
+                
+                <!-- Upload Form -->
+                <div class="bg-white rounded-lg shadow p-4 mb-6"
+                     x-data="uploadForm()">
+                    <h2 class="text-lg font-semibold mb-3">Upload Document</h2>
+                    {% csrf_token %}
+                    <form @submit.prevent="uploadFile" class="flex gap-2">
+                        <input 
+                            type="file" 
+                            @change="fileSelected"
+                            accept=".pdf,.docx,.txt,.md"
+                            class="flex-1 border rounded-lg px-4 py-2"
+                            :disabled="isUploading">
+                        <button 
+                            type="submit"
+                            :disabled="!selectedFile || isUploading"
+                            class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition">
+                            <span x-show="!isUploading">Upload</span>
+                            <span x-show="isUploading">Uploading...</span>
+                        </button>
+                    </form>
+                    <div x-show="uploadMessage" 
+                         class="mt-2 text-sm"
+                         :class="uploadSuccess ? 'text-green-600' : 'text-red-600'"
+                         x-text="uploadMessage"></div>
+                </div>
             </div>
             
             <!-- Documents list (Server-side rendering với Django templates) -->
@@ -34,10 +62,18 @@
                         <p>Chunks: {{ document.num_chunks|default:0 }}</p>
                         <p class="text-xs text-gray-400">{{ document.created_at|date:"M d, Y" }}</p>
                     </div>
-                    <a href="/documents/{{ document.id }}/" 
-                       class="text-blue-600 hover:underline text-sm mt-2 inline-block">
-                        View Details →
-                    </a>
+                    <div class="mt-3 flex gap-2">
+                        <a href="/documents/{{ document.id }}/" 
+                           class="text-blue-600 hover:underline text-sm">
+                            View Details →
+                        </a>
+                        {% if document.status == 'completed' %}
+                        <a href="/documents/{{ document.id }}/#chat" 
+                           class="text-green-600 hover:underline text-sm">
+                            💬 Chat
+                        </a>
+                        {% endif %}
+                    </div>
                 </div>
                 {% empty %}
                 <div class="col-span-3 bg-white rounded-lg shadow p-8 text-center">
@@ -48,6 +84,96 @@
             </div>
         </div>
     </div>
+
+    <script>
+        function uploadForm() {
+            return {
+                selectedFile: null,
+                isUploading: false,
+                uploadMessage: '',
+                uploadSuccess: false,
+
+                fileSelected(event) {
+                    this.selectedFile = event.target.files[0];
+                    this.uploadMessage = '';
+                    
+                    // Validate file size (10MB)
+                    if (this.selectedFile && this.selectedFile.size > 10 * 1024 * 1024) {
+                        this.uploadMessage = 'File too large. Maximum size: 10MB';
+                        this.uploadSuccess = false;
+                        this.selectedFile = null;
+                        event.target.value = '';
+                    }
+                },
+
+                async uploadFile() {
+                    if (!this.selectedFile || this.isUploading) {
+                        return;
+                    }
+
+                    this.isUploading = true;
+                    this.uploadMessage = '';
+
+                    const formData = new FormData();
+                    formData.append('file', this.selectedFile);
+
+                    // Get CSRF token
+                    const csrftoken = this.getCookie('csrftoken');
+
+                    try {
+                        const response = await fetch('/api/documents/upload/', {
+                            method: 'POST',
+                            headers: {
+                                'X-CSRFToken': csrftoken,
+                            },
+                            credentials: 'same-origin',
+                            body: formData
+                        });
+
+                        const data = await response.json();
+
+                        if (response.ok) {
+                            this.uploadMessage = 'File uploaded successfully! Processing...';
+                            this.uploadSuccess = true;
+                            this.selectedFile = null;
+                            
+                            // Reset file input
+                            const fileInput = document.querySelector('input[type="file"]');
+                            if (fileInput) fileInput.value = '';
+                            
+                            // Reload page after 2 seconds
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 2000);
+                        } else {
+                            this.uploadMessage = data.error || 'Upload failed. Please try again.';
+                            this.uploadSuccess = false;
+                        }
+                    } catch (error) {
+                        this.uploadMessage = 'Error uploading file: ' + error.message;
+                        this.uploadSuccess = false;
+                    } finally {
+                        this.isUploading = false;
+                    }
+                },
+
+                getCookie(name) {
+                    let cookieValue = null;
+                    if (document.cookie && document.cookie !== '') {
+                        const cookies = document.cookie.split(';');
+                        for (let i = 0; i < cookies.length; i++) {
+                            const cookie = cookies[i].trim();
+                            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                                break;
+                            }
+                        }
+                    }
+                    return cookieValue;
+                }
+            }
+        }
+    </script>
 </body>
 </html>
 

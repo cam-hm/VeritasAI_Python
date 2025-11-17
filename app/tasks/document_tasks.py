@@ -19,9 +19,11 @@ from app.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(bind=True, max_retries=3)
-def process_document(self, document_id: int):
+def _process_document_internal(document_id: int):
     """
+    Internal function để process document (không phải Celery task)
+    Được gọi bởi cả Celery task và synchronous processing
+    
     Process document: extract text, chunk, generate embeddings
     Tương đương với ProcessDocument::handle() trong Laravel
     
@@ -167,6 +169,28 @@ def process_document(self, document_id: int):
             }
         )
         
+        # Re-raise exception để Celery có thể retry
+        raise e
+
+
+@celery_app.task(bind=True, max_retries=3)
+def process_document(self, document_id: int):
+    """
+    Celery task wrapper - gọi _process_document_internal
+    """
+    try:
+        return _process_document_internal(document_id)
+    except Exception as e:
         # Retry nếu còn attempts
         raise self.retry(exc=e, countdown=60)  # Retry sau 60 giây
+
+
+def process_document_sync(document_id: int):
+    """
+    Process document synchronously (không dùng Celery)
+    Dùng khi Celery không available
+    """
+    import django
+    django.setup()
+    return _process_document_internal(document_id)
 

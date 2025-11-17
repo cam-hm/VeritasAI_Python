@@ -38,10 +38,22 @@ def documents_page(request):
 
 def document_detail(request, document_id):
     """
-    Document detail page - tương đương với DocumentController::show() trong Laravel
+    Document detail page với chat interface
+    Tương đương với DocumentController::show() trong Laravel
     """
     document = get_object_or_404(Document, id=document_id)
-    return render(request, 'document_detail.html', {'document': document})
+    
+    # Load chat messages nếu document đã completed
+    chat_messages = []
+    if document.status == 'completed':
+        chat_messages = ChatMessage.objects.filter(
+            document=document
+        ).order_by('created_at')[:50]  # Last 50 messages
+    
+    return render(request, 'document_detail.html', {
+        'document': document,
+        'chat_messages': chat_messages
+    })
 
 
 # API Views với Django REST Framework (tương đương với Laravel API routes)
@@ -67,7 +79,12 @@ def document_detail_api(request, document_id):
     return Response(serializer.data)
 
 
+from django.views.decorators.csrf import csrf_exempt
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
+
 @api_view(['POST'])
+@csrf_exempt  # Tạm thời disable CSRF cho API endpoint
 def document_upload(request):
     """
     Upload document - tương đương với DocumentController::store() API
@@ -138,8 +155,26 @@ def document_upload(request):
     
     # Trigger background job (tương đương ProcessDocument::dispatch() trong Laravel)
     # Lazy import để tránh circular import
-    from app.tasks.document_tasks import process_document
-    process_document.delay(document.id)
+    try:
+        from app.tasks.document_tasks import process_document
+        # Check if Celery is available
+        try:
+            process_document.delay(document.id)
+        except Exception as celery_error:
+            # If Celery not available, process synchronously
+            logger.warning(f"Celery not available, processing synchronously: {celery_error}")
+            from app.tasks.document_tasks import process_document_sync
+            # Process in background thread để không block request
+            import threading
+            thread = threading.Thread(target=process_document_sync, args=(document.id,))
+            thread.daemon = True
+            thread.start()
+    except Exception as e:
+        logger.error(f"Error triggering document processing: {e}")
+        # Update document status
+        document.status = 'failed'
+        document.error_message = f"Failed to start processing: {str(e)}"
+        document.save()
     
     serializer = DocumentSerializer(document)
     return Response({
@@ -177,6 +212,7 @@ def chat_document(request, document_id):
 
 
 @api_view(['POST'])
+@csrf_exempt  # Tạm thời disable CSRF cho API endpoint
 def chat_stream(request):
     """
     Stream chat response với RAG
@@ -384,13 +420,12 @@ def chat_stream(request):
             error_data = json.dumps({'error': error_msg})
             yield f"data: {error_data}\n\n"
     
-    return StreamingHttpResponse(
+    response = StreamingHttpResponse(
         generate_response(),
-        content_type='text/event-stream',
-        headers={
-            'X-Accel-Buffering': 'no',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
-        }
+        content_type='text/event-stream'
     )
+    # Set headers (không dùng 'Connection: keep-alive' vì Django dev server không support)
+    response['X-Accel-Buffering'] = 'no'
+    response['Cache-Control'] = 'no-cache'
+    return response
 

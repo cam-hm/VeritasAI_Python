@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ document.name }} - VeritasAI Django</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto p-4 md:p-8">
+        <div class="max-w-7xl mx-auto">
+            <!-- Header -->
+            <div class="mb-6">
+                <a href="/documents/" class="text-blue-600 hover:underline mb-2 inline-block">← Back to Documents</a>
+                <h1 class="text-3xl font-bold mb-2">{{ document.name }}</h1>
+                <div class="flex items-center gap-4 text-sm text-gray-600">
+                    <span>Status: 
+                        <span class="font-medium 
+                            {% if document.status == 'completed' %}text-green-600
+                            {% elif document.status == 'processing' %}text-yellow-600
+                            {% elif document.status == 'failed' %}text-red-600
+                            {% else %}text-gray-600{% endif %}">
+                            {{ document.get_status_display }}
+                        </span>
+                    </span>
+                    <span>Chunks: {{ document.num_chunks|default:0 }}</span>
+                    <span>{{ document.created_at|date:"M d, Y H:i" }}</span>
+                </div>
+            </div>
+
+            <!-- Chat Interface -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6" 
+                 x-data="chatApp({{ document.id }}, '{{ document.name }}', '{{ document.status }}')">
+                
+                <!-- Document Info (Sidebar) -->
+                <div class="lg:col-span-1">
+                    <div class="bg-white rounded-lg shadow p-6 sticky top-4">
+                        <h2 class="text-xl font-semibold mb-4">Document Info</h2>
+                        <div class="space-y-3 text-sm">
+                            <div>
+                                <span class="text-gray-500">File Size:</span>
+                                <span class="font-medium ml-2">{{ document.get_formatted_file_size }}</span>
+                            </div>
+                            <div>
+                                <span class="text-gray-500">Chunks:</span>
+                                <span class="font-medium ml-2">{{ document.num_chunks|default:0 }}</span>
+                            </div>
+                            <div>
+                                <span class="text-gray-500">Status:</span>
+                                <span class="font-medium ml-2 
+                                    {% if document.status == 'completed' %}text-green-600
+                                    {% elif document.status == 'processing' %}text-yellow-600
+                                    {% elif document.status == 'failed' %}text-red-600
+                                    {% else %}text-gray-600{% endif %}">
+                                    {{ document.get_status_display }}
+                                </span>
+                            </div>
+                            {% if document.processed_at %}
+                            <div>
+                                <span class="text-gray-500">Processed:</span>
+                                <span class="font-medium ml-2">{{ document.processed_at|date:"M d, Y H:i" }}</span>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chat Area -->
+                <div class="lg:col-span-2">
+                    <div class="bg-white rounded-lg shadow flex flex-col" style="height: 600px;">
+                        <!-- Chat Header -->
+                        <div class="border-b p-4">
+                            <h2 class="text-xl font-semibold">Chat with Document</h2>
+                            <p class="text-sm text-gray-500" x-show="documentStatus === 'completed'">
+                                Ask questions about this document
+                            </p>
+                            <p class="text-sm text-yellow-600" x-show="documentStatus !== 'completed'">
+                                Document is not ready for chat yet. Status: <span x-text="documentStatus"></span>
+                            </p>
+                        </div>
+
+                        <!-- Messages Area -->
+                        <div class="flex-1 overflow-y-auto p-4 space-y-4" 
+                             x-ref="messagesContainer"
+                             style="scroll-behavior: smooth;">
+                            <template x-for="(message, index) in messages" :key="index">
+                                <div class="flex" 
+                                     :class="message.role === 'user' ? 'justify-end' : 'justify-start'">
+                                    <div class="max-w-[80%] rounded-lg p-3"
+                                         :class="message.role === 'user' 
+                                             ? 'bg-blue-600 text-white' 
+                                             : 'bg-gray-200 text-gray-800'">
+                                        <div class="text-sm font-medium mb-1" x-text="message.role === 'user' ? 'You' : 'AI'"></div>
+                                        <div class="whitespace-pre-wrap" x-text="message.content"></div>
+                                    </div>
+                                </div>
+                            </template>
+                            
+                            <!-- Loading indicator -->
+                            <div x-show="isLoading" class="flex justify-start">
+                                <div class="bg-gray-200 rounded-lg p-3">
+                                    <div class="flex items-center gap-2">
+                                        <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+                                        <span class="text-sm text-gray-600">AI is thinking...</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Input Area -->
+                        <div class="border-t p-4" x-show="documentStatus === 'completed'">
+                            <form @submit.prevent="sendMessage" class="flex gap-2">
+                                <input 
+                                    type="text" 
+                                    x-model="inputMessage"
+                                    :disabled="isLoading"
+                                    placeholder="Ask a question about this document..."
+                                    class="flex-1 border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    :class="isLoading ? 'bg-gray-100 cursor-not-allowed' : ''">
+                                <button 
+                                    type="submit"
+                                    :disabled="isLoading || !inputMessage.trim()"
+                                    class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition">
+                                    Send
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function chatApp(documentId, documentName, documentStatus) {
+            return {
+                documentId: documentId,
+                documentName: documentName,
+                documentStatus: documentStatus,
+                messages: [],
+                inputMessage: '',
+                isLoading: false,
+                eventSource: null,
+
+                async init() {
+                    // Load existing chat messages
+                    await this.loadMessages();
+                },
+
+                async loadMessages() {
+                    try {
+                        const response = await fetch(`/api/chat/${this.documentId}/`);
+                        const data = await response.json();
+                        
+                        if (data.messages && data.messages.length > 0) {
+                            this.messages = data.messages.map(msg => ({
+                                role: msg.role,
+                                content: msg.content
+                            }));
+                        } else {
+                            // Initial greeting
+                            this.messages = [{
+                                role: 'ai',
+                                content: `Hello! I can help you understand the document "${this.documentName}". What would you like to know?`
+                            }];
+                        }
+                    } catch (error) {
+                        console.error('Error loading messages:', error);
+                        this.messages = [{
+                            role: 'ai',
+                            content: 'Error loading chat history. Please try again.'
+                        }];
+                    }
+                },
+
+                async sendMessage() {
+                    if (!this.inputMessage.trim() || this.isLoading || this.documentStatus !== 'completed') {
+                        return;
+                    }
+
+                    const userMessage = this.inputMessage.trim();
+                    this.inputMessage = '';
+                    
+                    // Add user message to UI
+                    this.messages.push({
+                        role: 'user',
+                        content: userMessage
+                    });
+
+                    // Scroll to bottom
+                    this.$nextTick(() => {
+                        this.scrollToBottom();
+                    });
+
+                    // Show loading
+                    this.isLoading = true;
+
+                    try {
+                        // Prepare messages for API
+                        const messagesForAPI = this.messages
+                            .filter(m => m.role !== 'ai' || !m.content.includes('Hello! I can help'))
+                            .map(m => ({
+                                role: m.role,
+                                content: m.content
+                            }));
+
+                        // Get CSRF token
+                        const csrftoken = this.getCookie('csrftoken');
+                        
+                        // Call chat API with streaming
+                        const response = await fetch('/api/chat/stream/', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': csrftoken,
+                            },
+                            credentials: 'same-origin',
+                            body: JSON.stringify({
+                                document_id: this.documentId,
+                                messages: messagesForAPI
+                            })
+                        });
+
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+
+                        // Handle streaming response (Server-Sent Events format)
+                        const reader = response.body.getReader();
+                        const decoder = new TextDecoder();
+                        let aiResponse = '';
+                        let buffer = '';
+
+                        // Add empty AI message for streaming
+                        this.messages.push({
+                            role: 'ai',
+                            content: ''
+                        });
+
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            
+                            if (done) break;
+
+                            buffer += decoder.decode(value, { stream: true });
+                            const lines = buffer.split('\n\n');
+                            buffer = lines.pop() || '';
+
+                            for (const chunk of lines) {
+                                if (chunk.trim()) {
+                                    const lines_in_chunk = chunk.split('\n');
+                                    for (const line of lines_in_chunk) {
+                                        if (line.startsWith('data: ')) {
+                                            try {
+                                                const data = JSON.parse(line.substring(6));
+                                                
+                                                if (data.content) {
+                                                    aiResponse += data.content;
+                                                    // Update last message (AI response)
+                                                    this.messages[this.messages.length - 1].content = aiResponse;
+                                                    
+                                                    // Auto-scroll every few updates
+                                                    this.$nextTick(() => {
+                                                        this.scrollToBottom();
+                                                    });
+                                                } else if (data.error) {
+                                                    throw new Error(data.error);
+                                                }
+                                            } catch (e) {
+                                                // Skip parse errors for incomplete chunks
+                                                if (e.message && !e.message.includes('JSON')) {
+                                                    console.error('Error:', e);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Update final message
+                        if (aiResponse) {
+                            this.messages[this.messages.length - 1].content = aiResponse;
+                        } else {
+                            // Remove empty message if no response
+                            this.messages.pop();
+                            this.messages.push({
+                                role: 'ai',
+                                content: 'Sorry, I could not generate a response. Please try again.'
+                            });
+                        }
+
+                    } catch (error) {
+                        console.error('Error sending message:', error);
+                        this.messages.push({
+                            role: 'ai',
+                            content: `Error: ${error.message}. Please try again.`
+                        });
+                    } finally {
+                        this.isLoading = false;
+                        this.$nextTick(() => {
+                            this.scrollToBottom();
+                        });
+                    }
+                },
+
+                scrollToBottom() {
+                    const container = this.$refs.messagesContainer;
+                    if (container) {
+                        container.scrollTop = container.scrollHeight;
+                    }
+                },
+
+                getCookie(name) {
+                    let cookieValue = null;
+                    if (document.cookie && document.cookie !== '') {
+                        const cookies = document.cookie.split(';');
+                        for (let i = 0; i < cookies.length; i++) {
+                            const cookie = cookies[i].trim();
+                            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                                break;
+                            }
+                        }
+                    }
+                    return cookieValue;
+                }
+            }
+        }
+    </script>
+</body>
+</html>
+
