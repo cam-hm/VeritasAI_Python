@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documents - VeritasAI Python</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto p-8">
+        <div class="max-w-6xl mx-auto">
+            <!-- Header -->
+            <div class="mb-6">
+                <h1 class="text-3xl font-bold mb-2">Documents</h1>
+                <a href="/" class="text-blue-600 hover:underline">← Back to Home</a>
+            </div>
+            
+            <!-- Documents list với Alpine.js (giống Livewire trong Laravel) -->
+            <div x-data="{ 
+                    documents: [],
+                    loading: true,
+                    error: null,
+                    async init() {
+                        try {
+                            const response = await fetch('/api/documents');
+                            if (!response.ok) throw new Error('Failed to fetch');
+                            const data = await response.json();
+                            this.documents = data.documents || [];
+                            this.loading = false;
+                        } catch (e) {
+                            this.error = e.message;
+                            this.loading = false;
+                        }
+                    }
+                }">
+                
+                <!-- Loading state -->
+                <div x-show="loading" class="bg-white rounded-lg shadow p-6 text-center">
+                    <p class="text-gray-500">Loading documents...</p>
+                </div>
+                
+                <!-- Error state -->
+                <div x-show="error" class="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                    <p class="text-red-600">Error: <span x-text="error"></span></p>
+                </div>
+                
+                <!-- Documents grid -->
+                <div x-show="!loading && !error" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <template x-for="doc in documents" :key="doc.id">
+                        <div class="bg-white rounded-lg shadow p-4 hover:shadow-lg transition">
+                            <h3 class="font-semibold text-lg mb-2" x-text="doc.name"></h3>
+                            <div class="space-y-1 text-sm text-gray-600">
+                                <p>Status: 
+                                    <span class="font-medium" 
+                                          :class="{
+                                              'text-green-600': doc.status === 'completed',
+                                              'text-yellow-600': doc.status === 'processing',
+                                              'text-red-600': doc.status === 'failed',
+                                              'text-gray-600': doc.status === 'pending'
+                                          }"
+                                          x-text="doc.status"></span>
+                                </p>
+                                <p>Chunks: <span x-text="doc.num_chunks || 0"></span></p>
+                                <p x-show="doc.created_at" class="text-xs text-gray-400" x-text="new Date(doc.created_at).toLocaleDateString()"></p>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+                
+                <!-- Empty state -->
+                <div x-show="!loading && !error && documents.length === 0" 
+                     class="bg-white rounded-lg shadow p-8 text-center">
+                    <p class="text-gray-500 text-lg">No documents found.</p>
+                    <p class="text-gray-400 text-sm mt-2">Upload a document to get started.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+
