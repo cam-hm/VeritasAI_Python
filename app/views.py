@@ -369,33 +369,19 @@ def chat_stream(request):
             messages_for_ai.insert(0, {'role': 'system', 'content': system_prompt})
             
             # 6. Generate response với Ollama (streaming)
-            ollama_url = f"{getattr(django_settings, 'OLLAMA_BASE_URL', 'http://127.0.0.1:11434')}/api/chat"
-            # Use llama3.1 if llama3.2 not available
+            # Sử dụng OllamaClient (tương đương với Ollama::chat() trong Laravel)
+            from app.services.ollama_client import get_ollama_client
+            
+            ollama = get_ollama_client()
             ollama_model = getattr(django_settings, 'OLLAMA_CHAT_MODEL', 'llama3.1')
             
             full_response = ""
-            with httpx.stream(
-                'POST',
-                ollama_url,
-                json={
-                    'model': ollama_model,
-                    'messages': messages_for_ai,
-                    'stream': True
-                },
-                timeout=60.0
-            ) as response:
-                response.raise_for_status()
-                
-                for line in response.iter_lines():
-                    if line:
-                        try:
-                            data = json.loads(line)
-                            if 'message' in data and 'content' in data['message']:
-                                content = data['message']['content']
-                                full_response += content
-                                yield f"data: {json.dumps({'content': content})}\n\n"
-                        except json.JSONDecodeError:
-                            continue
+            # Use OllamaClient chat với streaming
+            for data in ollama.chat(messages_for_ai, model=ollama_model, stream=True):
+                if 'message' in data and 'content' in data['message']:
+                    content = data['message']['content']
+                    full_response += content
+                    yield f"data: {json.dumps({'content': content})}\n\n"
             
             # 7. Save messages
             if document and user:

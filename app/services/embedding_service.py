@@ -10,6 +10,7 @@ import httpx
 from typing import List, Callable, Optional
 import logging
 from django.conf import settings as django_settings
+from .ollama_client import get_ollama_client
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ class EmbeddingService:
     Tương đương với EmbeddingService trong Laravel
     
     Trong Laravel:
-    - Sử dụng Camh\Ollama\Facades\Ollama
+    - Sử dụng Camh\\Ollama\\Facades\\Ollama
     - Batch processing với parallel HTTP requests
     - Retry logic
     
@@ -167,7 +168,14 @@ class EmbeddingService:
         """
         Generate single embedding từ Ollama API
         Tương đương với Ollama::embed($chunk) trong Laravel
+        
+        Note: Có thể dùng OllamaClient thay vì httpx trực tiếp
         """
+        # Option 1: Dùng OllamaClient (recommended)
+        # ollama = get_ollama_client()
+        # return ollama.embed(chunk, self.embed_model)
+        
+        # Option 2: Dùng httpx trực tiếp (hiện tại - giữ để tương thích)
         url = f"{self.ollama_base}/api/embeddings"
         payload = {
             "model": self.embed_model,
