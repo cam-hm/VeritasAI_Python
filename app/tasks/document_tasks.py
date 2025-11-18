@@ -30,9 +30,8 @@ def _process_document_internal(document_id: int):
     Args:
         document_id: ID của document cần process
     """
-    # Import Django models và setup
-    import django
-    django.setup()
+    # No need for django.setup() - Django is already configured
+    # when this is called from management command or Celery
     
     try:
         # Get document

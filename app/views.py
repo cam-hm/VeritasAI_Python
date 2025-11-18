@@ -161,26 +161,23 @@ def document_upload(request):
         try:
             process_document.delay(document.id)
         except Exception as celery_error:
-            # If Celery not available, use subprocess (survives request end)
-            logger.warning(f"Celery not available, using subprocess: {celery_error}")
+            # If Celery not available, use management command in subprocess
+            # This is Django best practice for background processing
+            logger.warning(f"Celery not available, using management command: {celery_error}")
             import subprocess
             import sys
             
-            # Use subprocess to run processing in background
-            # This survives after request ends (unlike daemon threads)
-            subprocess.Popen([
-                sys.executable,  # python executable
-                'manage.py',
-                'shell',
-                '-c',
-                f'from app.tasks.document_tasks import process_document_sync; process_document_sync({document.id})'
-            ], 
-            cwd=os.path.dirname(os.path.dirname(__file__)),  # project root
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True  # Detach from parent process
+            # Use Django management command (survives request end, proper Django setup)
+            # Tương đương với php artisan queue:work trong Laravel
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            subprocess.Popen(
+                [sys.executable, 'manage.py', 'process_document', str(document.id)],
+                cwd=project_root,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True  # Detach from parent
             )
-            logger.info(f"Background subprocess started for document {document.id}")
+            logger.info(f"Background process started for document {document.id}")
     except Exception as e:
         logger.error(f"Error triggering document processing: {e}")
         document.status = 'failed'
