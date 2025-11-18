@@ -156,14 +156,28 @@ def document_upload(request):
     # Trigger background job (tương đương ProcessDocument::dispatch() trong Laravel)
     # Lazy import để tránh circular import
     try:
-        from app.tasks.document_tasks import process_document
-        # Check if Celery is available
+        # Check if Celery worker is actually running
+        # process_document.delay() doesn't raise error if worker is down!
+        celery_available = False
         try:
+            from app.celery_app import celery_app
+            # Inspect active workers
+            inspect = celery_app.control.inspect(timeout=1.0)
+            active_workers = inspect.active()
+            if active_workers:
+                celery_available = True
+                logger.info(f"Celery workers available: {list(active_workers.keys())}")
+        except Exception as e:
+            logger.warning(f"Celery not available: {e}")
+        
+        if celery_available:
+            # Use Celery
+            from app.tasks.document_tasks import process_document
             process_document.delay(document.id)
-        except Exception as celery_error:
-            # If Celery not available, use management command in subprocess
-            # This is Django best practice for background processing
-            logger.warning(f"Celery not available, using management command: {celery_error}")
+            logger.info(f"Document {document.id} submitted to Celery queue")
+        else:
+            # Fallback to subprocess
+            logger.info(f"Using subprocess for document {document.id} (no Celery workers)")
             import subprocess
             import sys
             
