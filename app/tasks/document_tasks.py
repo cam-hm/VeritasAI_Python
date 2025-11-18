@@ -58,6 +58,21 @@ def _process_document_internal(document_id: int):
         logger.info(f"Extracting text from document {document_id}")
         text = extractor.extract(file_path)
         
+        # Validate extracted text
+        if not text or len(text.strip()) < 10:
+            error_msg = (
+                "Failed to extract text from document. "
+                "Possible reasons: scanned PDF (needs OCR), encrypted PDF, or corrupted file. "
+                f"Extracted only {len(text)} characters."
+            )
+            logger.error(error_msg, extra={'document_id': document_id})
+            raise RuntimeError(error_msg)
+        
+        logger.info(
+            f"Successfully extracted text from document",
+            extra={'document_id': document_id, 'text_length': len(text)}
+        )
+        
         # Chunk text
         logger.info(f"Chunking text for document {document_id}")
         chunks = chunker.chunk(text)
@@ -71,7 +86,12 @@ def _process_document_internal(document_id: int):
                 chunk_contents.append(trimmed_chunk)
         
         if not chunk_contents:
-            raise RuntimeError("No valid chunks found after processing document")
+            error_msg = (
+                f"No valid chunks found after processing document. "
+                f"Total chunks: {len(chunks)}, but all were too short (< 5 chars)."
+            )
+            logger.error(error_msg, extra={'document_id': document_id})
+            raise RuntimeError(error_msg)
         
         # Generate embeddings
         logger.info(
