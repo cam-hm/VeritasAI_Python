@@ -255,9 +255,21 @@ def chat_stream(request):
                     yield f"data: {error_data}\n\n"
                     return
             
-            # 1. Generate query embedding
-            embedding_service = EmbeddingService()
-            query_embedding = embedding_service.generate_embeddings([last_question])[0]
+            # 1. Generate query embedding với cache
+            from django.core.cache import cache
+            import hashlib
+            
+            # Cache key based on question hash
+            cache_key = f"embedding:{hashlib.md5(last_question.encode('utf-8')).hexdigest()}"
+            query_embedding = cache.get(cache_key)
+            
+            if query_embedding is None:
+                # Cache miss - generate embedding
+                embedding_service = EmbeddingService()
+                query_embedding = embedding_service.generate_embeddings([last_question])[0]
+                # Cache for 1 hour
+                cache.set(cache_key, query_embedding, timeout=3600)
+            # else: Cache hit - use cached embedding
             
             # 2. Vector search - tìm relevant chunks
             query = DocumentChunk.objects.all()
@@ -314,9 +326,18 @@ def chat_stream(request):
                     """, [embedding_str, embedding_str])
                 
                 rows = cursor.fetchall()
+                
+                # Fix N+1 query: Fetch all chunks in one query
+                chunk_ids = [row[0] for row in rows]
+                chunks_dict = {
+                    chunk.id: chunk 
+                    for chunk in DocumentChunk.objects.filter(id__in=chunk_ids)
+                }
+                
+                # Build candidate_chunks list with similarity scores
                 candidate_chunks = []
                 for row in rows:
-                    chunk = DocumentChunk.objects.get(id=row[0])
+                    chunk = chunks_dict[row[0]]
                     chunk.similarity = float(row[2])  # Add similarity as attribute
                     candidate_chunks.append(chunk)
             
@@ -343,12 +364,17 @@ def chat_stream(request):
             available = max_context_tokens - reserved
             
             # Select chunks fit trong token limit
+            # Use pre-computed token_count if available
             selected_chunks = []
             used_tokens = 0
+            separator_tokens = token_service.estimate_tokens("\n\n---\n\n")
             
             for chunk in candidate_chunks:
-                chunk_tokens = token_service.estimate_tokens(chunk.content)
-                separator_tokens = token_service.estimate_tokens("\n\n---\n\n")
+                # Use pre-computed token_count if available, otherwise estimate
+                if chunk.token_count > 0:
+                    chunk_tokens = chunk.token_count
+                else:
+                    chunk_tokens = token_service.estimate_tokens(chunk.content)
                 
                 if used_tokens + chunk_tokens + separator_tokens > available:
                     break

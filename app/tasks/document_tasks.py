@@ -96,15 +96,23 @@ def _process_document_internal(document_id: int):
             )
         )
         
-        # Store chunks with embeddings
+        # Store chunks with embeddings and pre-computed token counts
         count = 0
+        
+        # Import token service for pre-computing token counts
+        from app.services.token_estimation_service import TokenEstimationService
+        token_service = TokenEstimationService()
         
         for index, chunk_content in enumerate(chunk_contents):
             if index < len(embeddings) and embeddings[index]:
+                # Pre-compute token count for performance optimization
+                token_count = token_service.estimate_tokens(chunk_content)
+                
                 DocumentChunk.objects.create(
                     document=document,
                     content=chunk_content,
                     embedding=embeddings[index],
+                    token_count=token_count,  # Store pre-computed token count
                 )
                 count += 1
             else:

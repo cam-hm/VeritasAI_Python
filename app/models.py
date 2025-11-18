@@ -97,6 +97,7 @@ class DocumentChunk(models.Model):
     )
     content = models.TextField()
     embedding = VectorField(dimensions=768, null=True, blank=True)  # 768 dimensions cho nomic-embed-text
+    token_count = models.IntegerField(default=0)  # Pre-computed token count for performance
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
