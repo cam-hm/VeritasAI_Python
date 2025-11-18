@@ -161,17 +161,30 @@ def document_upload(request):
         try:
             process_document.delay(document.id)
         except Exception as celery_error:
-            # If Celery not available, process synchronously
+            # If Celery not available, process synchronously in background thread
             logger.warning(f"Celery not available, processing synchronously: {celery_error}")
             from app.tasks.document_tasks import process_document_sync
-            # Process in background thread để không block request
             import threading
-            thread = threading.Thread(target=process_document_sync, args=(document.id,))
+            
+            def process_with_db_cleanup(doc_id):
+                """Process document with proper DB connection handling"""
+                from django.db import connection
+                try:
+                    # Close connection before thread starts (get fresh connection)
+                    connection.close()
+                    # Process document
+                    process_document_sync(doc_id)
+                except Exception as e:
+                    logger.error(f"Background processing error: {e}")
+                finally:
+                    # Always close connection when thread finishes
+                    connection.close()
+            
+            thread = threading.Thread(target=process_with_db_cleanup, args=(document.id,))
             thread.daemon = True
             thread.start()
     except Exception as e:
         logger.error(f"Error triggering document processing: {e}")
-        # Update document status
         document.status = 'failed'
         document.error_message = f"Failed to start processing: {str(e)}"
         document.save()
