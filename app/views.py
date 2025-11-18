@@ -175,15 +175,17 @@ def document_upload(request):
             log_file_path = os.path.join(project_root, 'storage', 'logs', f'process_{document.id}.log')
             os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
             
-            with open(log_file_path, 'w') as log_file:
-                proc = subprocess.Popen(
-                    [sys.executable, 'manage.py', 'process_document', str(document.id)],
-                    cwd=project_root,
-                    stdout=log_file,
-                    stderr=subprocess.STDOUT,
-                    start_new_session=True  # Detach from parent
-                )
-                logger.info(f"Background process started for document {document.id}, PID: {proc.pid}, log: {log_file_path}")
+            # Open log file (don't use context manager - subprocess needs it open)
+            log_file = open(log_file_path, 'w')
+            proc = subprocess.Popen(
+                [sys.executable, 'manage.py', 'process_document', str(document.id)],
+                cwd=project_root,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,  # Detach from parent
+                close_fds=False  # Don't close file descriptors
+            )
+            logger.info(f"Background process started for document {document.id}, PID: {proc.pid}, log: {log_file_path}")
     except Exception as e:
         logger.error(f"Error triggering document processing: {e}")
         document.status = 'failed'
