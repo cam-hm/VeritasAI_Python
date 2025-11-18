@@ -148,17 +148,34 @@ CELERY_RESULT_BACKEND = env('REDIS_URL', default='redis://localhost:6379/0')
 
 # Cache Configuration (tương đương với config/cache.php trong Laravel)
 # Using Redis for caching (embeddings, etc.)
-CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-        'LOCATION': env('REDIS_URL', default='redis://localhost:6379/1'),  # DB 1 for cache
-        'OPTIONS': {
-            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-        },
-        'KEY_PREFIX': 'veritasai',
-        'TIMEOUT': 3600,  # Default timeout 1 hour
+# Fallback to LocMemCache if Redis not available
+try:
+    import redis
+    redis_available = True
+except ImportError:
+    redis_available = False
+
+if redis_available:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django_redis.cache.RedisCache',
+            'LOCATION': env('REDIS_URL', default='redis://localhost:6379/1'),
+            'OPTIONS': {
+                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+                'IGNORE_EXCEPTIONS': True,  # Fallback nếu Redis fail
+            },
+            'KEY_PREFIX': 'veritasai',
+            'TIMEOUT': 3600,
+        }
     }
-}
+else:
+    # Fallback to memory cache if Redis not available
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'veritasai-cache',
+        }
+    }
 
 # App-specific settings (tương đương với config/services.php trong Laravel)
 OLLAMA_BASE_URL = env('OLLAMA_BASE_URL', default='http://127.0.0.1:11434')
