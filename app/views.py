@@ -161,28 +161,26 @@ def document_upload(request):
         try:
             process_document.delay(document.id)
         except Exception as celery_error:
-            # If Celery not available, process synchronously in background thread
-            logger.warning(f"Celery not available, processing synchronously: {celery_error}")
-            from app.tasks.document_tasks import process_document_sync
-            import threading
+            # If Celery not available, use subprocess (survives request end)
+            logger.warning(f"Celery not available, using subprocess: {celery_error}")
+            import subprocess
+            import sys
             
-            def process_with_db_cleanup(doc_id):
-                """Process document with proper DB connection handling"""
-                from django.db import connection
-                try:
-                    # Close connection before thread starts (get fresh connection)
-                    connection.close()
-                    # Process document
-                    process_document_sync(doc_id)
-                except Exception as e:
-                    logger.error(f"Background processing error: {e}")
-                finally:
-                    # Always close connection when thread finishes
-                    connection.close()
-            
-            thread = threading.Thread(target=process_with_db_cleanup, args=(document.id,))
-            thread.daemon = True
-            thread.start()
+            # Use subprocess to run processing in background
+            # This survives after request ends (unlike daemon threads)
+            subprocess.Popen([
+                sys.executable,  # python executable
+                'manage.py',
+                'shell',
+                '-c',
+                f'from app.tasks.document_tasks import process_document_sync; process_document_sync({document.id})'
+            ], 
+            cwd=os.path.dirname(os.path.dirname(__file__)),  # project root
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True  # Detach from parent process
+            )
+            logger.info(f"Background subprocess started for document {document.id}")
     except Exception as e:
         logger.error(f"Error triggering document processing: {e}")
         document.status = 'failed'
