@@ -409,20 +409,32 @@ def chat_stream(request):
                     full_response += content
                     yield f"data: {json.dumps({'content': content})}\n\n"
             
-            # 7. Save messages
+            # 7. Save messages asynchronously (non-blocking)
             if document and user:
-                ChatMessage.objects.create(
-                    document=document,
-                    user=user,
-                    role='user',
-                    content=last_question
-                )
-                ChatMessage.objects.create(
-                    document=document,
-                    user=user,
-                    role='ai',
-                    content=full_response
-                )
+                import threading
+                
+                def save_messages_async():
+                    """Save chat messages in background thread"""
+                    try:
+                        ChatMessage.objects.create(
+                            document=document,
+                            user=user,
+                            role='user',
+                            content=last_question
+                        )
+                        ChatMessage.objects.create(
+                            document=document,
+                            user=user,
+                            role='ai',
+                            content=full_response
+                        )
+                    except Exception as e:
+                        logger.error(f"Error saving chat messages: {e}")
+                
+                # Run in background thread - user doesn't wait
+                thread = threading.Thread(target=save_messages_async)
+                thread.daemon = True
+                thread.start()
             
         except Exception as e:
             import traceback

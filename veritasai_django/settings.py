@@ -83,6 +83,11 @@ DATABASES = {
         'PASSWORD': env('DB_PASSWORD', default='password'),
         'HOST': env('DB_HOST', default='localhost'),
         'PORT': env('DB_PORT', default='5432'),
+        # Connection Pooling for better performance
+        'CONN_MAX_AGE': 600,  # Keep connections alive for 10 minutes
+        'OPTIONS': {
+            'connect_timeout': 10,
+        },
     }
 }
 
