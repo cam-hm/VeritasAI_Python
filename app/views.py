@@ -664,31 +664,52 @@ def chat_stream(request):
             messages_for_ai = messages.copy()
             messages_for_ai.insert(0, {'role': 'system', 'content': system_prompt})
             
-            # 6. Generate response với Ollama (streaming)
-            from app.services.ollama_client import get_ollama_client
+            # 6. Generate response với LLM provider (streaming)
+            from app.services.llm_service import get_provider_for_session
             
-            ollama = get_ollama_client()
+            # Get provider based on session or default
+            llm_provider = get_provider_for_session(session)
+            
             # Use session model settings if available, otherwise default
             if session:
-                ollama_model = session.model_name
+                model_name = session.model_name
                 temperature = float(session.temperature)
                 max_tokens = session.max_tokens
             else:
-                ollama_model = getattr(django_settings, 'OLLAMA_CHAT_MODEL', 'llama3.1')
+                model_name = getattr(django_settings, 'OLLAMA_CHAT_MODEL', 'llama3.1')
                 temperature = 0.7
                 max_tokens = 2000
             
             full_response = ""
-            # Use OllamaClient chat với streaming
-            for data in ollama.chat(
+            # Use LLM provider chat với streaming
+            # Handle different response formats from different providers
+            provider_name = llm_provider.provider_name
+            
+            for data in llm_provider.chat(
                 messages_for_ai, 
-                model=ollama_model, 
+                model=model_name, 
                 stream=True, 
                 temperature=temperature,
                 max_tokens=max_tokens
             ):
-                if 'message' in data and 'content' in data['message']:
-                    content = data['message']['content']
+                # Parse response based on provider format
+                # LiteLLM normalizes responses, but format may vary
+                content = None
+                
+                # Try OpenAI-compatible format first (most common)
+                if 'choices' in data and len(data['choices']) > 0:
+                    delta = data['choices'][0].get('delta', {})
+                    content = delta.get('content', '')
+                
+                # Fallback to Ollama format
+                if not content and 'message' in data:
+                    message = data.get('message', {})
+                    if isinstance(message, dict):
+                        content = message.get('content', '')
+                    elif hasattr(message, 'content'):
+                        content = message.content
+                
+                if content:
                     full_response += content
                     yield f"data: {json.dumps({'content': content})}\n\n"
             
@@ -719,7 +740,7 @@ def chat_stream(request):
                         content=full_response,
                         sources=sources_data[:5],  # Top 5 sources
                         tokens_used=token_service.estimate_tokens(full_response),
-                        model_used=ollama_model,
+                        model_used=model_name,
                         response_time_ms=response_time_ms
                     )
                     

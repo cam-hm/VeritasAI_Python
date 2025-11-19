@@ -1,6 +1,10 @@
 """
-Ollama Client
+Ollama Client (DEPRECATED - Use LiteLLMProvider instead)
 Tương đương với Camh\\Ollama\\Facades\\Ollama trong Laravel
+
+⚠️  DEPRECATED: This module is kept for backward compatibility only.
+    New code should use LiteLLMProvider from app.services.llm_providers
+    which supports 100+ LLM providers with unified interface.
 
 Package tự viết để tương tác với Ollama API
 Giống như Laravel package camh/laravel-ollama

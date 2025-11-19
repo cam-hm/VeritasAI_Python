@@ -11,6 +11,7 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
+        ('app', '0000_enable_pgvector_extension'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
