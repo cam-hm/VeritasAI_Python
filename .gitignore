@@ -30,11 +30,12 @@ storage/
 *.pdf
 *.docx
 *.txt
-# Documentation (allow README, TESTING, SETUP_SERVICES)
+# Documentation (allow README, TESTING, SETUP_SERVICES, and docs/)
 *.md
 !README.md
 !TESTING.md
 !SETUP_SERVICES.md
+!docs/*.md
 
 # Logs
 *.log
