@@ -11,10 +11,21 @@ Django views có thể là:
 from django.shortcuts import render, get_object_or_404
 from django.http import JsonResponse
 from rest_framework import viewsets, status
-from rest_framework.decorators import api_view, action
+from rest_framework.decorators import api_view, action, permission_classes
 from rest_framework.response import Response
-from .models import Document, DocumentChunk, ChatMessage
-from .serializers import DocumentSerializer, ChatMessageSerializer
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenRefreshView
+from .models import Document, DocumentChunk, ChatMessage, ChatSession
+from .serializers import (
+    DocumentSerializer, 
+    ChatMessageSerializer,
+    ChatSessionSerializer,
+    ChatSessionDetailSerializer,
+    RegisterSerializer,
+    LoginSerializer,
+    UserSerializer
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -58,25 +69,62 @@ def document_detail(request, document_id):
 
 # API Views với Django REST Framework (tương đương với Laravel API routes)
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def documents_list(request):
     """
-    List all documents - tương đương với DocumentController::index() API
+    List user's documents - tương đương với DocumentController::index() API
+    GET /api/documents/
     """
-    documents = Document.objects.all().order_by('-created_at')
-    serializer = DocumentSerializer(documents, many=True)
-    return Response({
-        'documents': serializer.data
-    })
+    # Filter by authenticated user
+    documents = Document.objects.filter(user=request.user).order_by('-created_at')
+    
+    # Filter by status
+    status = request.query_params.get('status')
+    if status:
+        documents = documents.filter(status=status)
+    
+    # Filter by category
+    category = request.query_params.get('category')
+    if category:
+        documents = documents.filter(category=category)
+    
+    # Search in name
+    search = request.query_params.get('search')
+    if search:
+        documents = documents.filter(name__icontains=search)
+    
+    # Pagination
+    from rest_framework.pagination import PageNumberPagination
+    paginator = PageNumberPagination()
+    paginator.page_size = int(request.query_params.get('page_size', 20))
+    paginated_docs = paginator.paginate_queryset(documents, request)
+    
+    serializer = DocumentSerializer(paginated_docs, many=True)
+    return paginator.get_paginated_response(serializer.data)
 
 
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def document_detail_api(request, document_id):
     """
     Show single document - tương đương với DocumentController::show() API
+    GET /api/documents/{id}/
     """
-    document = get_object_or_404(Document, id=document_id)
+    document = get_object_or_404(Document, id=document_id, user=request.user)
     serializer = DocumentSerializer(document)
     return Response(serializer.data)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def document_delete(request, document_id):
+    """
+    Delete document
+    DELETE /api/documents/{id}/
+    """
+    document = get_object_or_404(Document, id=document_id, user=request.user)
+    document.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 from django.views.decorators.csrf import csrf_exempt
@@ -84,7 +132,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 
 @api_view(['POST'])
-@csrf_exempt  # Tạm thời disable CSRF cho API endpoint
+@permission_classes([IsAuthenticated])
 def document_upload(request):
     """
     Upload document - tương đương với DocumentController::store() API
@@ -142,15 +190,26 @@ def document_upload(request):
     with open(full_path, 'wb') as f:
         f.write(file_content)
     
+    # Get optional fields
+    category = request.data.get('category')
+    tags = request.data.get('tags')
+    if tags and isinstance(tags, str):
+        try:
+            import json
+            tags = json.loads(tags)
+        except:
+            tags = []
+    
     # Create Document record
-    user = request.user if request.user.is_authenticated else None
     document = Document.objects.create(
         name=file_name,
         path=file_path,
-        user=user,
+        user=request.user,
         status='pending',
         file_hash=file_hash,
         file_size=file.size,
+        category=category,
+        tags=tags if tags else [],
     )
     
     # Trigger background job (tương đương ProcessDocument::dispatch() trong Laravel)
@@ -213,22 +272,171 @@ def document_upload(request):
     }, status=status.HTTP_201_CREATED)
 
 
+# Authentication Views
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def register(request):
+    """
+    User registration endpoint
+    POST /api/auth/register
+    """
+    serializer = RegisterSerializer(data=request.data)
+    if serializer.is_valid():
+        user = serializer.save()
+        
+        # Generate JWT tokens
+        refresh = RefreshToken.for_user(user)
+        
+        return Response({
+            'user': UserSerializer(user).data,
+            'tokens': {
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+            }
+        }, status=status.HTTP_201_CREATED)
+    
+    return Response({
+        'error': 'Validation failed',
+        'details': serializer.errors
+    }, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def login(request):
+    """
+    User login endpoint
+    POST /api/auth/login
+    """
+    serializer = LoginSerializer(data=request.data)
+    if serializer.is_valid():
+        user = serializer.validated_data['user']
+        
+        # Generate JWT tokens
+        refresh = RefreshToken.for_user(user)
+        
+        return Response({
+            'user': UserSerializer(user).data,
+            'tokens': {
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+            }
+        }, status=status.HTTP_200_OK)
+    
+    return Response({
+        'error': 'Invalid credentials'
+    }, status=status.HTTP_401_UNAUTHORIZED)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def logout(request):
+    """
+    User logout endpoint
+    POST /api/auth/logout
+    """
+    try:
+        refresh_token = request.data.get('refresh')
+        if refresh_token:
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+        
+        return Response({
+            'message': 'Logged out successfully'
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({
+            'error': 'Invalid token'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+# Chat Session Views
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def chat_sessions_list(request):
+    """
+    List user's chat sessions
+    GET /api/chat/sessions/
+    """
+    sessions = ChatSession.objects.filter(user=request.user).order_by('-last_message_at', '-started_at')
+    
+    # Pagination
+    from rest_framework.pagination import PageNumberPagination
+    paginator = PageNumberPagination()
+    paginator.page_size = int(request.query_params.get('page_size', 20))
+    paginated_sessions = paginator.paginate_queryset(sessions, request)
+    
+    serializer = ChatSessionSerializer(paginated_sessions, many=True)
+    return paginator.get_paginated_response(serializer.data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def chat_sessions_create(request):
+    """
+    Create new chat session
+    POST /api/chat/sessions/
+    """
+    title = request.data.get('title', 'New Conversation')
+    
+    session = ChatSession.objects.create(
+        user=request.user,
+        title=title
+    )
+    
+    serializer = ChatSessionSerializer(session)
+    return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def chat_sessions_detail(request, session_id):
+    """
+    Get chat session with messages
+    GET /api/chat/sessions/{id}/
+    """
+    session = get_object_or_404(ChatSession, id=session_id, user=request.user)
+    serializer = ChatSessionDetailSerializer(session)
+    return Response(serializer.data)
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def chat_sessions_update(request, session_id):
+    """
+    Update chat session
+    PATCH /api/chat/sessions/{id}/
+    """
+    session = get_object_or_404(ChatSession, id=session_id, user=request.user)
+    
+    serializer = ChatSessionSerializer(session, data=request.data, partial=True)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def chat_sessions_delete(request, session_id):
+    """
+    Delete chat session
+    DELETE /api/chat/sessions/{id}/
+    """
+    session = get_object_or_404(ChatSession, id=session_id, user=request.user)
+    session.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 # Chat Views
 @api_view(['GET'])
-def chat_general(request):
-    """
-    General chat - tương đương với ChatController::general() API
-    """
-    # TODO: Implement general chat
-    return Response({'message': 'General chat - to be implemented'})
-
-
-@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def chat_document(request, document_id):
     """
     Chat với document context - tương đương với ChatController::show() API
+    GET /api/chat/{document_id}/
     """
-    document = get_object_or_404(Document, id=document_id)
+    document = get_object_or_404(Document, id=document_id, user=request.user)
     messages = ChatMessage.objects.filter(document=document).order_by('created_at')
     serializer = ChatMessageSerializer(messages, many=True)
     
@@ -242,24 +450,28 @@ def chat_document(request, document_id):
 
 
 @api_view(['POST'])
-@csrf_exempt  # Tạm thời disable CSRF cho API endpoint
+@permission_classes([IsAuthenticated])
 def chat_stream(request):
     """
     Stream chat response với RAG
-    Tương đương với StreamController::stream() API trong Laravel
+    POST /api/chat/stream/
+    Supports both document-specific chat and central chat (session)
     """
     from django.http import StreamingHttpResponse
     from django.db.models import F
     from pgvector.django import VectorField
+    from django.db import connection
     import json
     import httpx
+    import time
     from django.conf import settings as django_settings
     from app.services.embedding_service import EmbeddingService
     from app.services.token_estimation_service import TokenEstimationService
     
+    session_id = request.data.get('session_id')
     document_id = request.data.get('document_id')
     messages = request.data.get('messages', [])
-    user = request.user if request.user.is_authenticated else None
+    user = request.user
     
     # Get last user message
     last_question = None
@@ -273,10 +485,17 @@ def chat_stream(request):
     
     def generate_response():
         try:
-            # Get document nếu có
+            start_time = time.time()
+            session = None
             document = None
-            if document_id:
-                document = get_object_or_404(Document, id=document_id)
+            
+            # Determine chat type: session (central chat) or document-specific
+            if session_id:
+                # Central chat - uses all user documents
+                session = get_object_or_404(ChatSession, id=session_id, user=user)
+            elif document_id:
+                # Document-specific chat
+                document = get_object_or_404(Document, id=document_id, user=user)
                 if document.status != 'completed':
                     error_data = json.dumps({
                         'error': 'Document not ready for chat',
@@ -284,6 +503,10 @@ def chat_stream(request):
                     })
                     yield f"data: {error_data}\n\n"
                     return
+            else:
+                error_data = json.dumps({'error': 'Either session_id or document_id is required'})
+                yield f"data: {error_data}\n\n"
+                return
             
             # 1. Generate query embedding với cache
             from django.core.cache import cache
@@ -302,17 +525,14 @@ def chat_stream(request):
             # else: Cache hit - use cached embedding
             
             # 2. Vector search - tìm relevant chunks
-            query = DocumentChunk.objects.all()
-            
             if document:
-                # Chat với specific document
-                query = query.filter(document=document)
-            elif user:
-                # General chat - chỉ search trong user's documents
-                query = query.filter(document__user=user)
+                # Document-specific chat - search only in this document
+                user_documents = [document]
+            elif session:
+                # Central chat - search in all user's completed documents
+                user_documents = session.get_user_documents()
             else:
-                # No user, no document - return error
-                error_data = json.dumps({'error': 'Authentication required'})
+                error_data = json.dumps({'error': 'Invalid chat configuration'})
                 yield f"data: {error_data}\n\n"
                 return
             
@@ -328,32 +548,33 @@ def chat_stream(request):
             # Use raw SQL for vector similarity search
             with connection.cursor() as cursor:
                 if document:
+                    # Document-specific: search in single document
                     cursor.execute("""
-                        SELECT id, content, 
-                               1 - (embedding <=> %s::vector) as similarity
-                        FROM document_chunks
-                        WHERE document_id = %s
-                        ORDER BY embedding <=> %s::vector
-                        LIMIT 15
-                    """, [embedding_str, document_id, embedding_str])
-                elif user:
-                    cursor.execute("""
-                        SELECT dc.id, dc.content,
+                        SELECT dc.id, dc.content, d.id as doc_id, d.name as doc_name,
                                1 - (dc.embedding <=> %s::vector) as similarity
                         FROM document_chunks dc
                         JOIN documents d ON dc.document_id = d.id
-                        WHERE d.user_id = %s
+                        WHERE dc.document_id = %s
                         ORDER BY dc.embedding <=> %s::vector
                         LIMIT 15
-                    """, [embedding_str, user.id, embedding_str])
-                else:
-                    cursor.execute("""
-                        SELECT id, content,
-                               1 - (embedding <=> %s::vector) as similarity
-                        FROM document_chunks
-                        ORDER BY embedding <=> %s::vector
+                    """, [embedding_str, document_id, embedding_str])
+                elif session:
+                    # Central chat: search in all user's documents
+                    document_ids = [doc.id for doc in user_documents]
+                    if not document_ids:
+                        error_data = json.dumps({'error': 'No documents available for chat'})
+                        yield f"data: {error_data}\n\n"
+                        return
+                    placeholders = ','.join(['%s'] * len(document_ids))
+                    cursor.execute(f"""
+                        SELECT dc.id, dc.content, d.id as doc_id, d.name as doc_name,
+                               1 - (dc.embedding <=> %s::vector) as similarity
+                        FROM document_chunks dc
+                        JOIN documents d ON dc.document_id = d.id
+                        WHERE d.id IN ({placeholders})
+                        ORDER BY dc.embedding <=> %s::vector
                         LIMIT 15
-                    """, [embedding_str, embedding_str])
+                    """, [embedding_str] + document_ids + [embedding_str])
                 
                 rows = cursor.fetchall()
                 
@@ -361,26 +582,45 @@ def chat_stream(request):
                 chunk_ids = [row[0] for row in rows]
                 chunks_dict = {
                     chunk.id: chunk 
-                    for chunk in DocumentChunk.objects.filter(id__in=chunk_ids)
+                    for chunk in DocumentChunk.objects.filter(id__in=chunk_ids).select_related('document')
                 }
                 
-                # Build candidate_chunks list with similarity scores
+                # Build candidate_chunks list with similarity scores and document info
                 candidate_chunks = []
+                sources_data = []  # For saving sources later
                 for row in rows:
                     chunk = chunks_dict[row[0]]
-                    chunk.similarity = float(row[2])  # Add similarity as attribute
+                    chunk.similarity = float(row[4])  # Similarity is now 5th column (after doc_id, doc_name)
+                    chunk.doc_id = row[2]  # Document ID
+                    chunk.doc_name = row[3]  # Document name
                     candidate_chunks.append(chunk)
+                    sources_data.append({
+                        'document_id': row[2],
+                        'document_name': row[3],
+                        'chunk_id': row[0],
+                        'relevance_score': float(row[4])
+                    })
             
             # 3. Token management - select chunks fit trong context window
             token_service = TokenEstimationService()
-            max_context_tokens = 4000
+            # Use session max_context_tokens if available
+            if session:
+                max_context_tokens = session.max_context_tokens
+            else:
+                max_context_tokens = 4000
             
             # Estimate tokens cho system prompt
             if document:
                 scope = f"this document ('{document.name}')"
+                system_prompt_text = "You are a helpful assistant. Answer questions based on the provided context."
+            elif session:
+                scope = "the user's uploaded documents"
+                system_prompt_text = session.system_prompt
             else:
                 scope = "the available documents"
-            system_prompt_base = f"Based only on the following context from {scope}, answer the user's question. If you are not sure, say you are not sure and suggest where to look.\n\nContext:\n"
+                system_prompt_text = "You are a helpful assistant. Answer questions based on the provided context."
+            
+            system_prompt_base = f"{system_prompt_text}\n\nBased only on the following context from {scope}, answer the user's question. If you are not sure, say you are not sure and suggest where to look.\n\nContext:\n"
             base_tokens = token_service.estimate_tokens(system_prompt_base)
             
             # Estimate tokens cho user messages
@@ -425,46 +665,81 @@ def chat_stream(request):
             messages_for_ai.insert(0, {'role': 'system', 'content': system_prompt})
             
             # 6. Generate response với Ollama (streaming)
-            # Sử dụng OllamaClient (tương đương với Ollama::chat() trong Laravel)
             from app.services.ollama_client import get_ollama_client
             
             ollama = get_ollama_client()
-            ollama_model = getattr(django_settings, 'OLLAMA_CHAT_MODEL', 'llama3.1')
+            # Use session model settings if available, otherwise default
+            if session:
+                ollama_model = session.model_name
+                temperature = float(session.temperature)
+                max_tokens = session.max_tokens
+            else:
+                ollama_model = getattr(django_settings, 'OLLAMA_CHAT_MODEL', 'llama3.1')
+                temperature = 0.7
+                max_tokens = 2000
             
             full_response = ""
             # Use OllamaClient chat với streaming
-            for data in ollama.chat(messages_for_ai, model=ollama_model, stream=True):
+            for data in ollama.chat(
+                messages_for_ai, 
+                model=ollama_model, 
+                stream=True, 
+                temperature=temperature,
+                max_tokens=max_tokens
+            ):
                 if 'message' in data and 'content' in data['message']:
                     content = data['message']['content']
                     full_response += content
                     yield f"data: {json.dumps({'content': content})}\n\n"
             
-            # 7. Save messages asynchronously (non-blocking)
-            if document and user:
-                import threading
-                
-                def save_messages_async():
-                    """Save chat messages in background thread"""
-                    try:
-                        ChatMessage.objects.create(
-                            document=document,
-                            user=user,
-                            role='user',
-                            content=last_question
-                        )
-                        ChatMessage.objects.create(
-                            document=document,
-                            user=user,
-                            role='ai',
-                            content=full_response
-                        )
-                    except Exception as e:
-                        logger.error(f"Error saving chat messages: {e}")
-                
-                # Run in background thread - user doesn't wait
-                thread = threading.Thread(target=save_messages_async)
-                thread.daemon = True
-                thread.start()
+            # 7. Calculate response time
+            response_time_ms = int((time.time() - start_time) * 1000)
+            
+            # 8. Save messages asynchronously (non-blocking)
+            import threading
+            
+            def save_messages_async():
+                """Save chat messages in background thread"""
+                try:
+                    # Save user message
+                    user_msg = ChatMessage.objects.create(
+                        session=session,
+                        document=document,
+                        user=user,
+                        role='user',
+                        content=last_question
+                    )
+                    
+                    # Save assistant message with sources and analytics
+                    assistant_msg = ChatMessage.objects.create(
+                        session=session,
+                        document=document,
+                        user=user,
+                        role='assistant',
+                        content=full_response,
+                        sources=sources_data[:5],  # Top 5 sources
+                        tokens_used=token_service.estimate_tokens(full_response),
+                        model_used=ollama_model,
+                        response_time_ms=response_time_ms
+                    )
+                    
+                    # Update session statistics
+                    if session:
+                        session.message_count = ChatMessage.objects.filter(session=session).count()
+                        session.last_message_at = assistant_msg.created_at
+                        # Auto-generate title from first message if not set
+                        first_message = ChatMessage.objects.filter(session=session).order_by('id').first()
+                        if not session.title and first_message and first_message.id == user_msg.id:
+                            # Use first 50 chars of first user message as title
+                            session.title = last_question[:50] + ('...' if len(last_question) > 50 else '')
+                        session.save()
+                except Exception as e:
+                    logger.error(f"Error saving chat messages: {e}")
+            
+            # Run in background thread - user doesn't wait
+            thread = threading.Thread(target=save_messages_async)
+            thread.daemon = True
+            thread.start()
             
         except Exception as e:
             import traceback
