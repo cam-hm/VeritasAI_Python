@@ -5,10 +5,9 @@
 ### Code hiện tại = Prototype/Proof of Concept
 
 **Đặc điểm của prototype hiện tại:**
-- ✅ Single-user: Dùng Django default User, không có Organization
-- ✅ Direct document chat: Chat trực tiếp với document, không có Chatbot abstraction
-- ✅ Simple authentication: Chưa có JWT, chưa có API keys
-- ✅ No multi-tenant: Tất cả documents trong cùng một pool
+- ✅ Single-user: Dùng Django default User
+- ✅ Direct document chat: Chat trực tiếp với document
+- ✅ Simple authentication: Chưa có JWT
 - ✅ Basic features: Upload, process, chat - đủ để test concept
 
 **Giá trị của prototype:**
@@ -25,13 +24,12 @@
 
 | Aspect | Prototype | SAAS MVP |
 |--------|-----------|----------|
-| **Users** | Single user | Multi-user với organizations |
-| **Data Isolation** | None | Organization-based isolation |
-| **Chat** | Direct với document | Chatbot abstraction |
-| **Authentication** | Django default | JWT + API keys |
-| **Permissions** | None | Role-based (admin/editor/viewer) |
+| **Users** | Single user | Multi-user (đăng ký/đăng nhập) |
+| **Data Isolation** | None | User-based isolation |
+| **Chat** | Direct với document | Document chat + Central chat (conversations) |
+| **Authentication** | Django default | JWT authentication |
 | **API** | Basic | Full RESTful API |
-| **Security** | Basic | Enterprise-grade |
+| **Security** | Basic | Production-ready |
 
 ---
 
@@ -90,16 +88,11 @@
 ### Phase 2: New Models & Database
 
 **New models to create:**
-- ✅ `Organization` - Multi-tenant core
-- ✅ `OrganizationMember` - User-Organization relationship
-- ✅ `Chatbot` - Chatbot abstraction
-- ✅ `ChatbotDocument` - Many-to-many
-- ✅ `ChatSession` - Session management
-- ✅ `APIKey` - API authentication
+- ✅ `ChatSession` - Central chat conversations (like ChatGPT)
 
 **Models to update:**
-- ⚠️ `Document` - Add organization FK
-- ⚠️ `ChatMessage` - Add session, chatbot FKs
+- ⚠️ `Document` - Change user FK to CASCADE, add category/tags
+- ⚠️ `ChatMessage` - Add session FK, update for central chat support
 
 ### Phase 3: New API Layer
 
@@ -153,33 +146,27 @@ app/
 
 ### Step 1: Database Migration
 
-1. Create new models (Organization, Chatbot, etc.)
-2. Create migrations
-3. Migrate existing data:
-   - Create default organization
-   - Assign existing documents to default org
-   - Create default chatbot for each document (optional)
+1. Update Document model (user FK to CASCADE, add fields)
+2. Create ChatSession model
+3. Update ChatMessage model (add session FK, update fields)
+4. Create migrations
+5. Migrate existing data (if any)
 
 ### Step 2: Authentication
 
 1. Install `djangorestframework-simplejwt`
 2. Implement JWT authentication
-3. Create auth endpoints
+3. Create auth endpoints (register, login, refresh, logout)
 4. Update existing views to use JWT
 
-### Step 3: Multi-tenant
+### Step 3: Central Chat
 
-1. Add Organization middleware
-2. Update all queries to filter by organization
-3. Add organization context to services
-4. Test data isolation
-
-### Step 4: Chatbot Abstraction
-
-1. Create Chatbot model
-2. Refactor chat logic to use Chatbot
-3. Update chat endpoints
-4. Migrate existing chat messages (optional)
+1. Create ChatSession model
+2. Implement central chat logic (uses ALL user documents)
+3. Update chat endpoints to support both:
+   - Document-specific chat (existing)
+   - Central chat (new - uses all documents)
+4. Update chat service to handle both cases
 
 ### Step 5: API Layer
 

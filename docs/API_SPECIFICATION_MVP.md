@@ -1,7 +1,7 @@
 # API Specification - MVP
 
 ## 🎯 Mục tiêu
-Định nghĩa tất cả API endpoints cần thiết cho MVP với request/response schemas chi tiết.
+Định nghĩa API endpoints cho MVP - Single service như ChatGPT.
 
 ---
 
@@ -21,8 +21,7 @@ Request:
   "email": "user@example.com",
   "password": "SecurePassword123!",
   "first_name": "John",
-  "last_name": "Doe",
-  "organization_name": "My Company"  // Auto-create organization
+  "last_name": "Doe"
 }
 
 Response 201:
@@ -32,11 +31,6 @@ Response 201:
     "email": "user@example.com",
     "first_name": "John",
     "last_name": "Doe"
-  },
-  "organization": {
-    "id": 1,
-    "name": "My Company",
-    "slug": "my-company"
   },
   "tokens": {
     "access": "eyJ0eXAiOiJKV1QiLCJhbGc...",
@@ -71,14 +65,7 @@ Response 200:
     "id": 1,
     "email": "user@example.com",
     "first_name": "John",
-    "last_name": "Doe",
-    "organizations": [
-      {
-        "id": 1,
-        "name": "My Company",
-        "role": "admin"
-      }
-    ]
+    "last_name": "Doe"
   },
   "tokens": {
     "access": "eyJ0eXAiOiJKV1QiLCJhbGc...",
@@ -121,134 +108,6 @@ Response 200:
 
 ---
 
-## 🏢 Organizations
-
-**Base URL**: `/api/organizations/`
-
-**Authentication**: Required (JWT)
-
-### List Organizations
-```http
-GET /api/organizations/
-Authorization: Bearer {access_token}
-
-Response 200:
-{
-  "organizations": [
-    {
-      "id": 1,
-      "name": "My Company",
-      "slug": "my-company",
-      "role": "admin",  // User's role in this org
-      "subscription_tier": "free",
-      "member_count": 5,
-      "document_count": 12,
-      "created_at": "2025-11-18T10:00:00Z"
-    }
-  ]
-}
-```
-
-### Get Organization
-```http
-GET /api/organizations/{id}/
-Authorization: Bearer {access_token}
-
-Response 200:
-{
-  "id": 1,
-  "name": "My Company",
-  "slug": "my-company",
-  "subscription_tier": "free",
-  "subscription_status": "active",
-  "max_users": 5,
-  "max_documents": 100,
-  "max_storage_mb": 1000,
-  "current_users": 3,
-  "current_documents": 12,
-  "current_storage_mb": 250,
-  "settings": {},
-  "created_at": "2025-11-18T10:00:00Z",
-  "updated_at": "2025-11-18T10:00:00Z"
-}
-
-Error 403:
-{
-  "error": "You don't have permission to access this organization"
-}
-```
-
-### Update Organization
-```http
-PATCH /api/organizations/{id}/
-Authorization: Bearer {access_token}
-Content-Type: application/json
-
-Request:
-{
-  "name": "Updated Company Name",
-  "settings": {
-    "theme": "dark"
-  }
-}
-
-Response 200:
-{
-  "id": 1,
-  "name": "Updated Company Name",
-  ...
-}
-```
-
-### List Members
-```http
-GET /api/organizations/{id}/members/
-Authorization: Bearer {access_token}
-
-Response 200:
-{
-  "members": [
-    {
-      "id": 1,
-      "user": {
-        "id": 1,
-        "email": "user@example.com",
-        "first_name": "John",
-        "last_name": "Doe"
-      },
-      "role": "admin",
-      "joined_at": "2025-11-18T10:00:00Z"
-    }
-  ]
-}
-```
-
-### Invite Member
-```http
-POST /api/organizations/{id}/members/invite
-Authorization: Bearer {access_token}
-Content-Type: application/json
-
-Request:
-{
-  "email": "newuser@example.com",
-  "role": "editor"
-}
-
-Response 201:
-{
-  "message": "Invitation sent",
-  "invitation": {
-    "id": 1,
-    "email": "newuser@example.com",
-    "role": "editor",
-    "invited_at": "2025-11-18T10:00:00Z"
-  }
-}
-```
-
----
-
 ## 📄 Documents
 
 **Base URL**: `/api/documents/`
@@ -260,7 +119,6 @@ Response 201:
 GET /api/documents/
 Authorization: Bearer {access_token}
 Query Parameters:
-  - organization_id (optional, default: user's org)
   - status (optional): pending|processing|completed|failed
   - category (optional)
   - search (optional): search in name
@@ -297,7 +155,6 @@ Content-Type: multipart/form-data
 
 Form Data:
   - file: (binary)
-  - organization_id: (optional, default: user's org)
   - category: (optional)
   - tags: (optional, JSON array)
 
@@ -334,15 +191,6 @@ Response 200:
   "num_chunks": 15,
   "category": "policies",
   "tags": ["important", "hr"],
-  "organization": {
-    "id": 1,
-    "name": "My Company"
-  },
-  "uploaded_by": {
-    "id": 1,
-    "email": "user@example.com"
-  },
-  "processed_at": "2025-11-18T10:05:00Z",
   "created_at": "2025-11-18T10:00:00Z",
   "updated_at": "2025-11-18T10:05:00Z"
 }
@@ -354,156 +202,21 @@ DELETE /api/documents/{id}/
 Authorization: Bearer {access_token}
 
 Response 204: No Content
-
-Error 403:
-{
-  "error": "You don't have permission to delete this document"
-}
 ```
 
 ---
 
-## 🤖 Chatbots
+## 💬 Chat Sessions (Central Chat)
 
-**Base URL**: `/api/chatbots/`
+**Base URL**: `/api/chat/sessions/`
 
 **Authentication**: Required (JWT)
-
-### List Chatbots
-```http
-GET /api/chatbots/
-Authorization: Bearer {access_token}
-Query Parameters:
-  - organization_id (optional)
-  - is_public (optional): true|false
-
-Response 200:
-{
-  "chatbots": [
-    {
-      "id": 1,
-      "name": "HR Assistant",
-      "description": "Answers HR questions",
-      "model_provider": "ollama",
-      "model_name": "llama3.1",
-      "is_public": true,
-      "document_count": 5,
-      "created_at": "2025-11-18T10:00:00Z"
-    }
-  ]
-}
-```
-
-### Create Chatbot
-```http
-POST /api/chatbots/
-Authorization: Bearer {access_token}
-Content-Type: application/json
-
-Request:
-{
-  "name": "HR Assistant",
-  "description": "Answers HR questions",
-  "organization_id": 1,
-  "system_prompt": "You are a helpful HR assistant...",
-  "model_provider": "ollama",
-  "model_name": "llama3.1",
-  "temperature": 0.7,
-  "max_tokens": 2000,
-  "document_ids": [1, 2, 3]  // Documents to use
-}
-
-Response 201:
-{
-  "id": 1,
-  "name": "HR Assistant",
-  "description": "Answers HR questions",
-  "system_prompt": "You are a helpful HR assistant...",
-  "model_provider": "ollama",
-  "model_name": "llama3.1",
-  "temperature": 0.7,
-  "max_tokens": 2000,
-  "document_count": 3,
-  "embed_code": "<script>...</script>",
-  "created_at": "2025-11-18T10:00:00Z"
-}
-```
-
-### Update Chatbot
-```http
-PATCH /api/chatbots/{id}/
-Authorization: Bearer {access_token}
-Content-Type: application/json
-
-Request:
-{
-  "name": "Updated HR Assistant",
-  "document_ids": [1, 2, 3, 4]  // Update documents
-}
-
-Response 200:
-{
-  "id": 1,
-  "name": "Updated HR Assistant",
-  ...
-}
-```
-
-### Delete Chatbot
-```http
-DELETE /api/chatbots/{id}/
-Authorization: Bearer {access_token}
-
-Response 204: No Content
-```
-
----
-
-## 💬 Chat
-
-**Base URL**: `/api/chat/`
-
-**Authentication**: Required (JWT hoặc API Key)
-
-### Stream Chat (Server-Sent Events)
-```http
-POST /api/chat/stream/
-Authorization: Bearer {access_token}
-Content-Type: application/json
-
-Request:
-{
-  "chatbot_id": 1,
-  "messages": [
-    {
-      "role": "user",
-      "content": "What is our vacation policy?"
-    }
-  ],
-  "session_id": "optional-uuid"  // Optional: continue existing session
-}
-
-Response 200 (Stream):
-Content-Type: text/event-stream
-
-data: {"content": "Based"}
-data: {"content": " on"}
-data: {"content": " the"}
-...
-
-Error 400:
-data: {"error": "Chatbot not found"}
-
-Error 400:
-data: {"error": "Document not ready for chat"}
-```
 
 ### List Chat Sessions
 ```http
 GET /api/chat/sessions/
 Authorization: Bearer {access_token}
 Query Parameters:
-  - chatbot_id (optional)
   - page (optional)
   - page_size (optional)
 
@@ -514,16 +227,33 @@ Response 200:
     {
       "id": 1,
       "session_id": "uuid-here",
-      "chatbot": {
-        "id": 1,
-        "name": "HR Assistant"
-      },
       "title": "Vacation policy question",
       "message_count": 5,
       "last_message_at": "2025-11-18T10:00:00Z",
       "started_at": "2025-11-18T09:55:00Z"
     }
   ]
+}
+```
+
+### Create Chat Session
+```http
+POST /api/chat/sessions/
+Authorization: Bearer {access_token}
+Content-Type: application/json
+
+Request:
+{
+  "title": "New Conversation"  // Optional, auto-generated if not provided
+}
+
+Response 201:
+{
+  "id": 1,
+  "session_id": "uuid-here",
+  "title": "New Conversation",
+  "message_count": 0,
+  "started_at": "2025-11-18T10:00:00Z"
 }
 ```
 
@@ -536,10 +266,6 @@ Response 200:
 {
   "id": 1,
   "session_id": "uuid-here",
-  "chatbot": {
-    "id": 1,
-    "name": "HR Assistant"
-  },
   "title": "Vacation policy question",
   "messages": [
     {
@@ -556,7 +282,8 @@ Response 200:
         {
           "document_id": 1,
           "document_name": "HR Policy.pdf",
-          "chunk_id": 5
+          "chunk_id": 5,
+          "relevance_score": 0.85
         }
       ],
       "created_at": "2025-11-18T09:55:05Z"
@@ -565,6 +292,25 @@ Response 200:
   "message_count": 5,
   "started_at": "2025-11-18T09:55:00Z",
   "last_message_at": "2025-11-18T10:00:00Z"
+}
+```
+
+### Update Chat Session
+```http
+PATCH /api/chat/sessions/{id}/
+Authorization: Bearer {access_token}
+Content-Type: application/json
+
+Request:
+{
+  "title": "Updated title"
+}
+
+Response 200:
+{
+  "id": 1,
+  "title": "Updated title",
+  ...
 }
 ```
 
@@ -578,66 +324,75 @@ Response 204: No Content
 
 ---
 
-## 🔑 API Keys
+## 💬 Chat Messages
 
-**Base URL**: `/api/api-keys/`
+**Base URL**: `/api/chat/`
 
-**Authentication**: Required (JWT, Admin/Editor role)
+**Authentication**: Required (JWT)
 
-### List API Keys
+### Stream Chat (Server-Sent Events)
+
+#### Central Chat (uses all user documents)
 ```http
-GET /api/api-keys/
-Authorization: Bearer {access_token}
-
-Response 200:
-{
-  "api_keys": [
-    {
-      "id": 1,
-      "name": "Production API Key",
-      "key_prefix": "sk_live_",
-      "rate_limit": 100,
-      "last_used_at": "2025-11-18T10:00:00Z",
-      "is_active": true,
-      "created_at": "2025-11-18T09:00:00Z"
-    }
-  ]
-}
-```
-
-### Create API Key
-```http
-POST /api/api-keys/
+POST /api/chat/stream/
 Authorization: Bearer {access_token}
 Content-Type: application/json
 
 Request:
 {
-  "name": "Production API Key",
-  "rate_limit": 100,
-  "expires_at": "2026-11-18T10:00:00Z"  // Optional
+  "session_id": "uuid-here",  // Required for central chat
+  "messages": [
+    {
+      "role": "user",
+      "content": "What is our vacation policy?"
+    }
+  ]
 }
 
-Response 201:
-{
-  "id": 1,
-  "name": "Production API Key",
-  "api_key": "sk_live_abc123xyz...",  // Only shown once!
-  "key_prefix": "sk_live_",
-  "rate_limit": 100,
-  "created_at": "2025-11-18T10:00:00Z"
-}
+Response 200 (Stream):
+Content-Type: text/event-stream
 
-⚠️ IMPORTANT: API key chỉ hiển thị 1 lần khi tạo!
+data: {"content": "Based"}
+data: {"content": " on"}
+data: {"content": " the"}
+...
+
+Error 400:
+data: {"error": "Session not found"}
 ```
 
-### Delete API Key
+#### Document-Specific Chat
 ```http
-DELETE /api/api-keys/{id}/
+POST /api/chat/stream/
 Authorization: Bearer {access_token}
+Content-Type: application/json
 
-Response 204: No Content
+Request:
+{
+  "document_id": 1,  // Required for document-specific chat
+  "messages": [
+    {
+      "role": "user",
+      "content": "What is in this document?"
+    }
+  ]
+}
+
+Response 200 (Stream):
+Content-Type: text/event-stream
+
+data: {"content": "This"}
+data: {"content": " document"}
+...
+
+Error 400:
+data: {"error": "Document not ready for chat"}
 ```
+
+**Note**: 
+- `session_id` = Central chat (uses ALL user documents)
+- `document_id` = Document-specific chat (uses only that document)
+- Cannot use both at the same time
 
 ---
 
@@ -674,7 +429,6 @@ Response 204: No Content
 - `PERMISSION_DENIED`: Don't have permission
 - `RESOURCE_NOT_FOUND`: Resource doesn't exist
 - `RATE_LIMIT_EXCEEDED`: Too many requests
-- `ORGANIZATION_LIMIT_EXCEEDED`: Organization limit reached
 - `FILE_TOO_LARGE`: File exceeds size limit
 - `INVALID_FILE_TYPE`: File type not supported
 
@@ -685,7 +439,6 @@ Response 204: No Content
 ### Default Limits (MVP)
 
 - **Authenticated users**: 100 requests/hour
-- **API keys**: Configurable per key (default: 100/hour)
 - **File upload**: 10 uploads/hour per user
 - **Chat**: 50 messages/hour per user
 
@@ -699,11 +452,9 @@ X-RateLimit-Reset: 1637251200
 
 ---
 
-## 📝 Next Steps
+## 📝 Notes
 
-1. ✅ Review và approve API specification
-2. ✅ Implement API endpoints
-3. ✅ Create API documentation (Swagger/OpenAPI)
-4. ✅ Write API tests
-5. ✅ Create API client examples
-
+- **Single service**: No multi-tenant, each user has their own data
+- **Central chat**: Automatically uses ALL user's documents for RAG
+- **Document chat**: Still available for document-specific queries
+- **Simple**: Focus on core features, can extend later
