@@ -507,8 +507,9 @@ def chat_stream(request):
             if session_id:
                 # Central chat - uses all user documents
                 session = get_object_or_404(ChatSession, id=session_id, user=user)
+                document = session.document  # May be None for central chat
             elif document_id:
-                # Document-specific chat
+                # Document-specific chat - find or create session for this document
                 document = get_object_or_404(Document, id=document_id, user=user)
                 if document.status != 'completed':
                     error_data = json.dumps({
@@ -517,6 +518,20 @@ def chat_stream(request):
                     })
                     yield f"data: {error_data}\n\n"
                     return
+                
+                # Find existing session for this document, or create new one
+                session, created = ChatSession.objects.get_or_create(
+                    document=document,
+                    user=user,
+                    defaults={
+                        'title': document.name,  # Set title to document name
+                        'model_provider': getattr(django_settings, 'DEFAULT_LLM_PROVIDER', 'ollama'),
+                        'model_name': getattr(django_settings, 'OLLAMA_CHAT_MODEL', 'llama3.1'),
+                    }
+                )
+                
+                if created:
+                    logger.info(f"Created new chat session {session.id} for document {document.id}")
             else:
                 error_data = json.dumps({'error': 'Either session_id or document_id is required'})
                 yield f"data: {error_data}\n\n"
@@ -556,12 +571,22 @@ def chat_stream(request):
             from django.db import connection
             import json as json_module
             
+            # Initialize candidate_chunks and sources_data
+            candidate_chunks = []
+            sources_data = []
+            
             # Convert embedding to string format for PostgreSQL
             embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
             
             # Use raw SQL for vector similarity search
             with connection.cursor() as cursor:
-                if document:
+                # Check if we should search in a specific document
+                # Either document is provided directly, or session has a linked document
+                target_document = document
+                if not target_document and session and session.document:
+                    target_document = session.document
+                
+                if target_document:
                     # Document-specific: search in single document
                     cursor.execute("""
                         SELECT dc.id, dc.content, d.id as doc_id, d.name as doc_name,
@@ -571,51 +596,111 @@ def chat_stream(request):
                         WHERE dc.document_id = %s
                         ORDER BY dc.embedding <=> %s::vector
                         LIMIT 15
-                    """, [embedding_str, document_id, embedding_str])
+                    """, [embedding_str, target_document.id, embedding_str])
+                    
+                    rows = cursor.fetchall()
+                    
+                    # Fix N+1 query: Fetch all chunks in one query
+                    chunk_ids = [row[0] for row in rows]
+                    chunks_dict = {
+                        chunk.id: chunk 
+                        for chunk in DocumentChunk.objects.filter(id__in=chunk_ids).select_related('document')
+                    }
+                    
+                    # Build candidate_chunks list with similarity scores and document info
+                    for row in rows:
+                        chunk = chunks_dict[row[0]]
+                        chunk.similarity = float(row[4])
+                        chunk.doc_id = row[2]
+                        chunk.doc_name = row[3]
+                        candidate_chunks.append(chunk)
+                        sources_data.append({
+                            'document_id': row[2],
+                            'document_name': row[3],
+                            'chunk_id': row[0],
+                            'relevance_score': float(row[4])
+                        })
                 elif session:
                     # Central chat: search in all user's documents
                     document_ids = [doc.id for doc in user_documents]
                     if not document_ids:
-                        error_data = json.dumps({'error': 'No documents available for chat'})
-                        yield f"data: {error_data}\n\n"
-                        return
-                    placeholders = ','.join(['%s'] * len(document_ids))
-                    cursor.execute(f"""
-                        SELECT dc.id, dc.content, d.id as doc_id, d.name as doc_name,
-                               1 - (dc.embedding <=> %s::vector) as similarity
-                        FROM document_chunks dc
-                        JOIN documents d ON dc.document_id = d.id
-                        WHERE d.id IN ({placeholders})
-                        ORDER BY dc.embedding <=> %s::vector
-                        LIMIT 15
-                    """, [embedding_str] + document_ids + [embedding_str])
-                
-                rows = cursor.fetchall()
-                
-                # Fix N+1 query: Fetch all chunks in one query
-                chunk_ids = [row[0] for row in rows]
-                chunks_dict = {
-                    chunk.id: chunk 
-                    for chunk in DocumentChunk.objects.filter(id__in=chunk_ids).select_related('document')
-                }
-                
-                # Build candidate_chunks list with similarity scores and document info
-                candidate_chunks = []
-                sources_data = []  # For saving sources later
-                for row in rows:
-                    chunk = chunks_dict[row[0]]
-                    chunk.similarity = float(row[4])  # Similarity is now 5th column (after doc_id, doc_name)
-                    chunk.doc_id = row[2]  # Document ID
-                    chunk.doc_name = row[3]  # Document name
-                    candidate_chunks.append(chunk)
-                    sources_data.append({
-                        'document_id': row[2],
-                        'document_name': row[3],
-                        'chunk_id': row[0],
-                        'relevance_score': float(row[4])
-                    })
+                        # No documents - allow general chat without RAG
+                        logger.info("No documents available, using general chat mode")
+                        candidate_chunks = []
+                        sources_data = []
+                    else:
+                        placeholders = ','.join(['%s'] * len(document_ids))
+                        cursor.execute(f"""
+                            SELECT dc.id, dc.content, d.id as doc_id, d.name as doc_name,
+                                   1 - (dc.embedding <=> %s::vector) as similarity
+                            FROM document_chunks dc
+                            JOIN documents d ON dc.document_id = d.id
+                            WHERE d.id IN ({placeholders})
+                            ORDER BY dc.embedding <=> %s::vector
+                            LIMIT 15
+                        """, [embedding_str] + document_ids + [embedding_str])
+                        
+                        rows = cursor.fetchall()
+                        
+                        # Fix N+1 query: Fetch all chunks in one query
+                        chunk_ids = [row[0] for row in rows]
+                        chunks_dict = {
+                            chunk.id: chunk 
+                            for chunk in DocumentChunk.objects.filter(id__in=chunk_ids).select_related('document')
+                        }
+                        
+                        # Build candidate_chunks list with similarity scores and document info
+                        candidate_chunks = []
+                        sources_data = []  # For saving sources later
+                        for row in rows:
+                            chunk = chunks_dict[row[0]]
+                            chunk.similarity = float(row[4])  # Similarity is now 5th column (after doc_id, doc_name)
+                            chunk.doc_id = row[2]  # Document ID
+                            chunk.doc_name = row[3]  # Document name
+                            candidate_chunks.append(chunk)
+                            sources_data.append({
+                                'document_id': row[2],
+                                'document_name': row[3],
+                                'chunk_id': row[0],
+                                'relevance_score': float(row[4])
+                            })
             
-            # 3. Token management - select chunks fit trong context window
+            # 3. Determine if question is related to documents (based on similarity scores)
+            # Check if we have a specific document (direct or via session)
+            target_document = document
+            if not target_document and session and session.document:
+                target_document = session.document
+            
+            use_rag = False
+            # When chatting about a specific document, always use RAG (lower threshold)
+            # For general chat, use higher threshold to avoid false positives
+            if target_document:
+                similarity_threshold = 0.3  # Lower threshold for document-specific chat
+                # Always use RAG when we have a specific document, even if similarity is low
+                # This ensures AI knows what document we're talking about
+                use_rag = len(candidate_chunks) > 0
+            else:
+                similarity_threshold = 0.65  # Higher threshold for general chat
+            
+            if candidate_chunks and not target_document:
+                # Only check similarity threshold for general chat (not document-specific)
+                top_similarity = candidate_chunks[0].similarity if candidate_chunks else 0
+                use_rag = top_similarity >= similarity_threshold
+            
+            logger.info(
+                f"RAG decision for question",
+                extra={
+                    'document_id': document_id,
+                    'target_document_id': target_document.id if target_document else None,
+                    'session_id': session_id,
+                    'top_similarity': candidate_chunks[0].similarity if candidate_chunks else 0,
+                    'use_rag': use_rag,
+                    'chunks_found': len(candidate_chunks),
+                    'is_document_specific': target_document is not None,
+                }
+            )
+            
+            # 4. Token management - select chunks fit trong context window (only if using RAG)
             token_service = TokenEstimationService()
             # Use session max_context_tokens if available
             if session:
@@ -623,62 +708,111 @@ def chat_stream(request):
             else:
                 max_context_tokens = 4000
             
-            # Estimate tokens cho system prompt
-            if document:
-                scope = f"this document ('{document.name}')"
-                system_prompt_text = "You are a helpful assistant. Answer questions based on the provided context."
-            elif session:
-                scope = "the user's uploaded documents"
-                system_prompt_text = session.system_prompt
-            else:
-                scope = "the available documents"
-                system_prompt_text = "You are a helpful assistant. Answer questions based on the provided context."
-            
-            system_prompt_base = f"{system_prompt_text}\n\nBased only on the following context from {scope}, answer the user's question. If you are not sure, say you are not sure and suggest where to look.\n\nContext:\n"
-            base_tokens = token_service.estimate_tokens(system_prompt_base)
-            
-            # Estimate tokens cho user messages
-            user_tokens = sum(
-                token_service.estimate_tokens(msg.get('content', ''))
-                for msg in messages if msg.get('role') == 'user'
-            )
-            
-            # Reserve tokens
-            reserved = base_tokens + user_tokens + int(max_context_tokens * 0.2)
-            available = max_context_tokens - reserved
-            
-            # Select chunks fit trong token limit
-            # Use pre-computed token_count if available
             selected_chunks = []
-            used_tokens = 0
-            separator_tokens = token_service.estimate_tokens("\n\n---\n\n")
+            context = ""
             
-            for chunk in candidate_chunks:
-                # Use pre-computed token_count if available, otherwise estimate
-                if chunk.token_count > 0:
-                    chunk_tokens = chunk.token_count
+            if use_rag and candidate_chunks:
+                # Estimate tokens cho system prompt
+                if target_document:
+                    scope = f"this document ('{target_document.name}')"
+                    system_prompt_text = "You are a helpful assistant. Answer questions based on the provided context from the documents."
+                elif session:
+                    scope = "the user's uploaded documents"
+                    system_prompt_text = session.system_prompt or "You are a helpful assistant. Answer questions based on the provided context from the user's documents."
                 else:
-                    chunk_tokens = token_service.estimate_tokens(chunk.content)
+                    scope = "the available documents"
+                    system_prompt_text = "You are a helpful assistant. Answer questions based on the provided context."
                 
-                if used_tokens + chunk_tokens + separator_tokens > available:
-                    break
+                system_prompt_base = f"{system_prompt_text}\n\nUse the following context from {scope} to answer the user's question. If the context contains relevant information, use it. If not, you can use your general knowledge to provide a helpful answer.\n\nContext:\n"
+                base_tokens = token_service.estimate_tokens(system_prompt_base)
                 
-                selected_chunks.append(chunk)
-                used_tokens += chunk_tokens + separator_tokens
+                # Estimate tokens cho user messages
+                user_tokens = sum(
+                    token_service.estimate_tokens(msg.get('content', ''))
+                    for msg in messages if msg.get('role') == 'user'
+                )
+                
+                # Reserve tokens
+                reserved = base_tokens + user_tokens + int(max_context_tokens * 0.2)
+                available = max_context_tokens - reserved
+                
+                # Select chunks fit trong token limit
+                # Use pre-computed token_count if available
+                used_tokens = 0
+                separator_tokens = token_service.estimate_tokens("\n\n---\n\n")
+                
+                for chunk in candidate_chunks:
+                    # Use pre-computed token_count if available, otherwise estimate
+                    if chunk.token_count > 0:
+                        chunk_tokens = chunk.token_count
+                    else:
+                        chunk_tokens = token_service.estimate_tokens(chunk.content)
+                    
+                    if used_tokens + chunk_tokens + separator_tokens > available:
+                        break
+                    
+                    selected_chunks.append(chunk)
+                    used_tokens += chunk_tokens + separator_tokens
+                
+                # Build context
+                context = "\n\n---\n\n".join([chunk.content for chunk in selected_chunks])
             
-            # 4. Build context
-            context = "\n\n---\n\n".join([chunk.content for chunk in selected_chunks])
-            
-            if not context.strip():
-                system_prompt = "You are a helpful assistant. If the context is empty or insufficient, answer based on your general knowledge."
+            # 5. Build system prompt based on whether we're using RAG
+            if use_rag and context.strip():
+                if target_document:
+                    scope = f"this document ('{target_document.name}')"
+                    system_prompt = (
+                        f"You are a helpful assistant helping the user understand and answer questions about the document '{target_document.name}'. "
+                        f"The user is asking about this specific document. Use the following context from {scope} to answer their question. "
+                        f"If the context contains relevant information, use it naturally in your answer. "
+                        f"If the context doesn't fully answer the question, supplement with your general knowledge. "
+                        f"Answer naturally and conversationally - don't explicitly mention that you're using context unless asked. "
+                        f"Always assume the user is referring to this document when they say 'this document', 'the document', etc.\n\nContext:\n{context}"
+                    )
+                elif session:
+                    scope = "the user's uploaded documents"
+                    system_prompt = (
+                        f"You are a helpful assistant. The user has asked a question that relates to their documents. "
+                        f"Use the following context from {scope} to answer. "
+                        f"If the context contains relevant information, use it naturally in your answer. "
+                        f"If the context doesn't fully answer the question, supplement with your general knowledge. "
+                        f"Answer naturally and conversationally - don't explicitly mention that you're using context unless asked.\n\nContext:\n{context}"
+                    )
+                else:
+                    scope = "the available documents"
+                    system_prompt = (
+                        f"You are a helpful assistant. The user has asked a question that relates to their documents. "
+                        f"Use the following context from {scope} to answer. "
+                        f"If the context contains relevant information, use it naturally in your answer. "
+                        f"If the context doesn't fully answer the question, supplement with your general knowledge. "
+                        f"Answer naturally and conversationally - don't explicitly mention that you're using context unless asked.\n\nContext:\n{context}"
+                    )
             else:
-                system_prompt = system_prompt_base + context
+                # General question - no RAG
+                if target_document:
+                    # Even without RAG, if we have a specific document, mention it in the prompt
+                    system_prompt = (
+                        f"You are a helpful assistant helping the user with questions about the document '{target_document.name}'. "
+                        f"The user is asking about this specific document. "
+                        f"Answer the user's questions naturally and conversationally. "
+                        f"Be clear, detailed, and helpful. Use your knowledge to provide comprehensive answers. "
+                        f"Always assume the user is referring to this document when they say 'this document', 'the document', etc."
+                    )
+                else:
+                    # General question - no RAG, no specific document
+                    system_prompt = (
+                        "You are a helpful and friendly AI assistant. "
+                        "Answer the user's questions naturally and conversationally. "
+                        "Be clear, detailed, and helpful. Use your knowledge to provide comprehensive answers."
+                    )
+                # Clear sources since we're not using RAG
+                sources_data = []
             
-            # 5. Prepare messages for LLM
+            # 6. Prepare messages for LLM
             messages_for_ai = messages.copy()
             messages_for_ai.insert(0, {'role': 'system', 'content': system_prompt})
             
-            # 6. Generate response với LLM provider (streaming)
+            # 7. Generate response với LLM provider (streaming)
             from app.services.llm_service import get_provider_for_session
             
             # Get provider based on session or default
@@ -692,7 +826,7 @@ def chat_stream(request):
             else:
                 model_name = getattr(django_settings, 'OLLAMA_CHAT_MODEL', 'llama3.1')
                 temperature = 0.7
-                max_tokens = 2000
+                max_tokens = 4000  # Increased from 2000 to allow longer responses
             
             full_response = ""
             # Use LLM provider chat với streaming
@@ -727,10 +861,10 @@ def chat_stream(request):
                     full_response += content
                     yield f"data: {json.dumps({'content': content})}\n\n"
             
-            # 7. Calculate response time
+            # 8. Calculate response time
             response_time_ms = int((time.time() - start_time) * 1000)
             
-            # 8. Save messages asynchronously (non-blocking)
+            # 9. Save messages asynchronously (non-blocking)
             import threading
             
             def save_messages_async():

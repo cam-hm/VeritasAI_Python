@@ -52,10 +52,12 @@ class ChatSessionSerializer(serializers.ModelSerializer):
     """
     ChatSession serializer
     """
+    document = serializers.PrimaryKeyRelatedField(read_only=True)
+    
     class Meta:
         model = ChatSession
         fields = [
-            'id', 'session_id', 'title',
+            'id', 'session_id', 'title', 'document',
             'system_prompt', 'model_provider', 'model_name',
             'temperature', 'max_tokens', 'max_context_tokens',
             'message_count', 'started_at', 'last_message_at'
