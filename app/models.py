@@ -133,6 +133,15 @@ class ChatSession(models.Model):
         related_name='chat_sessions'
     )
     
+    # Optional: Link to a specific document (for document-specific chats)
+    document = models.ForeignKey(
+        Document,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='chat_sessions'
+    )
+    
     # Session identification
     session_id = models.CharField(max_length=255, unique=True)  # UUID
     title = models.CharField(max_length=255, null=True, blank=True)  # Auto-generated from first message
@@ -169,6 +178,7 @@ class ChatSession(models.Model):
         indexes = [
             models.Index(fields=['user', 'last_message_at']),
             models.Index(fields=['session_id']),
+            models.Index(fields=['document', 'user']),
         ]
     
     def __str__(self):

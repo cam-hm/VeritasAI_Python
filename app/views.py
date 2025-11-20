@@ -507,8 +507,9 @@ def chat_stream(request):
             if session_id:
                 # Central chat - uses all user documents
                 session = get_object_or_404(ChatSession, id=session_id, user=user)
+                document = session.document  # May be None for central chat
             elif document_id:
-                # Document-specific chat
+                # Document-specific chat - find or create session for this document
                 document = get_object_or_404(Document, id=document_id, user=user)
                 if document.status != 'completed':
                     error_data = json.dumps({
@@ -517,6 +518,20 @@ def chat_stream(request):
                     })
                     yield f"data: {error_data}\n\n"
                     return
+                
+                # Find existing session for this document, or create new one
+                session, created = ChatSession.objects.get_or_create(
+                    document=document,
+                    user=user,
+                    defaults={
+                        'title': document.name,  # Set title to document name
+                        'model_provider': getattr(django_settings, 'DEFAULT_LLM_PROVIDER', 'ollama'),
+                        'model_name': getattr(django_settings, 'OLLAMA_CHAT_MODEL', 'llama3.1'),
+                    }
+                )
+                
+                if created:
+                    logger.info(f"Created new chat session {session.id} for document {document.id}")
             else:
                 error_data = json.dumps({'error': 'Either session_id or document_id is required'})
                 yield f"data: {error_data}\n\n"
@@ -565,7 +580,13 @@ def chat_stream(request):
             
             # Use raw SQL for vector similarity search
             with connection.cursor() as cursor:
-                if document:
+                # Check if we should search in a specific document
+                # Either document is provided directly, or session has a linked document
+                target_document = document
+                if not target_document and session and session.document:
+                    target_document = session.document
+                
+                if target_document:
                     # Document-specific: search in single document
                     cursor.execute("""
                         SELECT dc.id, dc.content, d.id as doc_id, d.name as doc_name,
@@ -575,7 +596,7 @@ def chat_stream(request):
                         WHERE dc.document_id = %s
                         ORDER BY dc.embedding <=> %s::vector
                         LIMIT 15
-                    """, [embedding_str, document_id, embedding_str])
+                    """, [embedding_str, target_document.id, embedding_str])
                     
                     rows = cursor.fetchall()
                     
@@ -645,23 +666,39 @@ def chat_stream(request):
                             })
             
             # 3. Determine if question is related to documents (based on similarity scores)
-            # If top chunk similarity is too low, treat as general question
-            use_rag = False
-            similarity_threshold = 0.65  # Increased threshold to avoid false positives (greetings, general questions)
+            # Check if we have a specific document (direct or via session)
+            target_document = document
+            if not target_document and session and session.document:
+                target_document = session.document
             
-            if candidate_chunks:
+            use_rag = False
+            # When chatting about a specific document, always use RAG (lower threshold)
+            # For general chat, use higher threshold to avoid false positives
+            if target_document:
+                similarity_threshold = 0.3  # Lower threshold for document-specific chat
+                # Always use RAG when we have a specific document, even if similarity is low
+                # This ensures AI knows what document we're talking about
+                use_rag = len(candidate_chunks) > 0
+            else:
+                similarity_threshold = 0.65  # Higher threshold for general chat
+            
+            if candidate_chunks and not target_document:
+                # Only check similarity threshold for general chat (not document-specific)
                 top_similarity = candidate_chunks[0].similarity if candidate_chunks else 0
                 use_rag = top_similarity >= similarity_threshold
-                logger.info(
-                    f"RAG decision for question",
-                    extra={
-                        'document_id': document_id,
-                        'session_id': session_id,
-                        'top_similarity': top_similarity,
-                        'use_rag': use_rag,
-                        'chunks_found': len(candidate_chunks),
-                    }
-                )
+            
+            logger.info(
+                f"RAG decision for question",
+                extra={
+                    'document_id': document_id,
+                    'target_document_id': target_document.id if target_document else None,
+                    'session_id': session_id,
+                    'top_similarity': candidate_chunks[0].similarity if candidate_chunks else 0,
+                    'use_rag': use_rag,
+                    'chunks_found': len(candidate_chunks),
+                    'is_document_specific': target_document is not None,
+                }
+            )
             
             # 4. Token management - select chunks fit trong context window (only if using RAG)
             token_service = TokenEstimationService()
@@ -676,8 +713,8 @@ def chat_stream(request):
             
             if use_rag and candidate_chunks:
                 # Estimate tokens cho system prompt
-                if document:
-                    scope = f"this document ('{document.name}')"
+                if target_document:
+                    scope = f"this document ('{target_document.name}')"
                     system_prompt_text = "You are a helpful assistant. Answer questions based on the provided context from the documents."
                 elif session:
                     scope = "the user's uploaded documents"
@@ -722,28 +759,52 @@ def chat_stream(request):
             
             # 5. Build system prompt based on whether we're using RAG
             if use_rag and context.strip():
-                if document:
-                    scope = f"this document ('{document.name}')"
+                if target_document:
+                    scope = f"this document ('{target_document.name}')"
+                    system_prompt = (
+                        f"You are a helpful assistant helping the user understand and answer questions about the document '{target_document.name}'. "
+                        f"The user is asking about this specific document. Use the following context from {scope} to answer their question. "
+                        f"If the context contains relevant information, use it naturally in your answer. "
+                        f"If the context doesn't fully answer the question, supplement with your general knowledge. "
+                        f"Answer naturally and conversationally - don't explicitly mention that you're using context unless asked. "
+                        f"Always assume the user is referring to this document when they say 'this document', 'the document', etc.\n\nContext:\n{context}"
+                    )
                 elif session:
                     scope = "the user's uploaded documents"
+                    system_prompt = (
+                        f"You are a helpful assistant. The user has asked a question that relates to their documents. "
+                        f"Use the following context from {scope} to answer. "
+                        f"If the context contains relevant information, use it naturally in your answer. "
+                        f"If the context doesn't fully answer the question, supplement with your general knowledge. "
+                        f"Answer naturally and conversationally - don't explicitly mention that you're using context unless asked.\n\nContext:\n{context}"
+                    )
                 else:
                     scope = "the available documents"
-                
-                system_prompt = (
-                    f"You are a helpful assistant. The user has asked a question that relates to their documents. "
-                    f"Use the following context from {scope} to answer. "
-                    f"If the context contains relevant information, use it naturally in your answer. "
-                    f"If the context doesn't fully answer the question, supplement with your general knowledge. "
-                    f"Answer naturally and conversationally - don't explicitly mention that you're using context unless asked.\n\nContext:\n{context}"
-                )
+                    system_prompt = (
+                        f"You are a helpful assistant. The user has asked a question that relates to their documents. "
+                        f"Use the following context from {scope} to answer. "
+                        f"If the context contains relevant information, use it naturally in your answer. "
+                        f"If the context doesn't fully answer the question, supplement with your general knowledge. "
+                        f"Answer naturally and conversationally - don't explicitly mention that you're using context unless asked.\n\nContext:\n{context}"
+                    )
             else:
-                # General question - no RAG, just answer normally
-                # Don't mention documents or context at all
-                system_prompt = (
-                    "You are a helpful and friendly AI assistant. "
-                    "Answer the user's questions naturally and conversationally. "
-                    "Be clear, detailed, and helpful. Use your knowledge to provide comprehensive answers."
-                )
+                # General question - no RAG
+                if target_document:
+                    # Even without RAG, if we have a specific document, mention it in the prompt
+                    system_prompt = (
+                        f"You are a helpful assistant helping the user with questions about the document '{target_document.name}'. "
+                        f"The user is asking about this specific document. "
+                        f"Answer the user's questions naturally and conversationally. "
+                        f"Be clear, detailed, and helpful. Use your knowledge to provide comprehensive answers. "
+                        f"Always assume the user is referring to this document when they say 'this document', 'the document', etc."
+                    )
+                else:
+                    # General question - no RAG, no specific document
+                    system_prompt = (
+                        "You are a helpful and friendly AI assistant. "
+                        "Answer the user's questions naturally and conversationally. "
+                        "Be clear, detailed, and helpful. Use your knowledge to provide comprehensive answers."
+                    )
                 # Clear sources since we're not using RAG
                 sources_data = []
             
