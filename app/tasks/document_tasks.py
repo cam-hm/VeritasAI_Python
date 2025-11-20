@@ -47,7 +47,11 @@ def _process_document_internal(document_id: int):
         file_path = os.path.join(storage_path, document.path)
         
         if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File not found: {file_path}")
+            error_msg = f"File not found: {file_path}"
+            logger.error(error_msg, extra={'document_id': document_id, 'file_path': file_path})
+            raise FileNotFoundError(error_msg)
+        
+        logger.info(f"Processing file: {file_path}", extra={'document_id': document_id})
         
         # Initialize services
         extractor = TextExtractionService()
@@ -56,7 +60,12 @@ def _process_document_internal(document_id: int):
         
         # Extract text
         logger.info(f"Extracting text from document {document_id}")
-        text = extractor.extract(file_path)
+        try:
+            text = extractor.extract(file_path)
+        except Exception as e:
+            error_msg = f"Failed to extract text from document: {str(e)}"
+            logger.error(error_msg, extra={'document_id': document_id, 'error': str(e)})
+            raise RuntimeError(error_msg)
         
         # Validate extracted text
         if not text or len(text.strip()) < 10:
@@ -99,21 +108,37 @@ def _process_document_internal(document_id: int):
             extra={
                 'document_id': document_id,
                 'chunk_count': len(chunk_contents),
+                'provider': embedding_service.provider_name,
+                'model': embedding_service.embed_model,
             }
         )
         
-        embeddings = embedding_service.generate_embeddings(
-            chunk_contents,
-            progress_callback=lambda processed, total: logger.debug(
-                f"Embedding progress for document {document_id}",
+        try:
+            embeddings = embedding_service.generate_embeddings(
+                chunk_contents,
+                progress_callback=lambda processed, total: logger.info(
+                    f"Embedding progress for document {document_id}: {processed}/{total}",
+                    extra={
+                        'document_id': document_id,
+                        'processed': processed,
+                        'total': total,
+                        'percentage': round((processed / total) * 100, 2),
+                    }
+                )
+            )
+        except Exception as e:
+            error_msg = f"Failed to generate embeddings: {str(e)}"
+            logger.error(
+                error_msg,
                 extra={
                     'document_id': document_id,
-                    'processed': processed,
-                    'total': total,
-                    'percentage': round((processed / total) * 100, 2),
-                }
+                    'error': str(e),
+                    'error_type': type(e).__name__,
+                    'chunk_count': len(chunk_contents),
+                },
+                exc_info=True
             )
-        )
+            raise RuntimeError(error_msg)
         
         # Store chunks with embeddings and pre-computed token counts
         count = 0

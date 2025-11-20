@@ -43,11 +43,21 @@ class EmbeddingService:
         self.batch_size = batch_size or 10
         self.max_retries = max_retries or 3
         self.retry_delay = retry_delay or 1.0
-        self.concurrency = concurrency or 5
+        self.concurrency = concurrency or 3  # Reduced from 5 to avoid overwhelming Ollama
         
         # Use LiteLLM provider (default: ollama)
         self.provider_name = getattr(django_settings, 'DEFAULT_LLM_PROVIDER', 'ollama')
         self.embed_model = getattr(django_settings, 'OLLAMA_EMBED_MODEL', 'nomic-embed-text')
+        
+        # Log configuration for debugging
+        logger.info(
+            f"EmbeddingService initialized",
+            extra={
+                'provider': self.provider_name,
+                'model': self.embed_model,
+                'base_url': getattr(django_settings, 'OLLAMA_BASE_URL', 'http://127.0.0.1:11434'),
+            }
+        )
     
     def generate_embeddings(
         self, 
@@ -113,9 +123,9 @@ class EmbeddingService:
             if progress_callback:
                 progress_callback(processed, total)
             
-            # Rate limiting: small delay between batches
+            # Rate limiting: delay between batches to avoid overwhelming Ollama
             if batch != batches[-1]:
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(0.2)  # Increased from 0.05 to 0.2
         
         return embeddings
     
@@ -145,7 +155,10 @@ class EmbeddingService:
                 )
                 
                 if attempts < self.max_retries:
-                    await asyncio.sleep(self.retry_delay)
+                    # Exponential backoff
+                    delay = self.retry_delay * (2 ** (attempts - 1))
+                    logger.info(f"Retrying embedding after {delay}s (attempt {attempts + 1}/{self.max_retries})")
+                    await asyncio.sleep(delay)
         
         # Nếu tất cả retries failed
         logger.error(

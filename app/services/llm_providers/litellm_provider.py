@@ -151,11 +151,51 @@ class LiteLLMProvider(LLMProvider):
         # Format model name
         formatted_model = self._format_model_name(model)
         
-        # Call LiteLLM embedding
-        response = embedding(
-            model=formatted_model,
-            input=prompt
-        )
+        # Call LiteLLM embedding with error handling and timeout
+        try:
+            import litellm
+            # Set timeout for Ollama (default is 60s, but can be too short for large chunks)
+            original_timeout = getattr(litellm, 'request_timeout', 60)
+            if self.provider_name == 'ollama':
+                litellm.request_timeout = 120  # 2 minutes for Ollama
+            
+            response = embedding(
+                model=formatted_model,
+                input=prompt
+            )
+            
+            # Restore original timeout
+            if self.provider_name == 'ollama':
+                litellm.request_timeout = original_timeout
+                
+        except Exception as e:
+            # Log detailed error for debugging
+            import logging
+            logger = logging.getLogger(__name__)
+            error_msg = str(e)
+            logger.error(
+                f"LiteLLM embedding failed",
+                extra={
+                    'model': formatted_model,
+                    'provider': self.provider_name,
+                    'error': error_msg,
+                    'error_type': type(e).__name__,
+                    'prompt_length': len(prompt) if isinstance(prompt, str) else len(str(prompt)),
+                },
+                exc_info=True
+            )
+            # Provide more helpful error message
+            from django.conf import settings as django_settings
+            ollama_url = getattr(django_settings, 'OLLAMA_BASE_URL', 'http://127.0.0.1:11434')
+            
+            if 'EOF' in error_msg or 'Connection' in error_msg or 'refused' in error_msg.lower():
+                raise RuntimeError(f"Connection to Ollama failed. Please check if Ollama is running at {ollama_url}. Error: {error_msg}")
+            elif '500' in error_msg or 'Internal Server Error' in error_msg:
+                raise RuntimeError(f"Ollama server error. The model '{model}' may not be available or Ollama is experiencing issues. Error: {error_msg}")
+            elif 'timeout' in error_msg.lower():
+                raise RuntimeError(f"Request timeout. The embedding request took too long. Try reducing chunk size or check Ollama performance.")
+            else:
+                raise RuntimeError(f"Failed to generate embedding: {error_msg}")
         
         # Handle different response formats from LiteLLM
         # LiteLLM may return object or dict depending on provider
