@@ -77,13 +77,38 @@
         </div>
     </div>
 
+    <script src="/static/js/api.js"></script>
     <script>
-        // Placeholder for future API integration
-        document.getElementById('loginForm').addEventListener('submit', function(e) {
+        document.getElementById('loginForm').addEventListener('submit', async function(e) {
             e.preventDefault();
-            // API integration will be added later
-            console.log('Login form submitted');
+            
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const errorEl = document.getElementById('errorMessage');
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            
+            // Disable button
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Signing in...';
+            errorEl.classList.add('hidden');
+            
+            try {
+                await AuthAPI.login(email, password);
+                // Redirect to documents page
+                window.location.href = '/documents.html';
+            } catch (error) {
+                errorEl.textContent = error.message || 'Login failed. Please check your credentials.';
+                errorEl.classList.remove('hidden');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Sign In';
+            }
         });
+        
+        // Check if already logged in
+        if (TokenManager.isAuthenticated()) {
+            window.location.href = '/documents.html';
+        }
     </script>
 </body>
 </html>

@@ -39,12 +39,31 @@ def home(request):
     return render(request, 'home.html')
 
 
+def login_page(request):
+    """Login page"""
+    return render(request, 'login.html')
+
+
+def register_page(request):
+    """Register page"""
+    return render(request, 'register.html')
+
+
 def documents_page(request):
     """
     Documents page - tương đương với DocumentController::index() trong Laravel
     """
-    documents = Document.objects.all().order_by('-created_at')
-    return render(request, 'documents.html', {'documents': documents})
+    return render(request, 'documents.html')
+
+
+def chat_page(request):
+    """Chat page"""
+    return render(request, 'chat.html')
+
+
+def chat_sessions_page(request):
+    """Chat sessions list page"""
+    return render(request, 'chat_sessions.html')
 
 
 def document_detail(request, document_id):

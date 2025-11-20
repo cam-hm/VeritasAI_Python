@@ -118,7 +118,7 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [
-    # BASE_DIR / 'static',  # Tạm thời comment vì chưa có thư mục
+    BASE_DIR / 'static',
 ]
 
 # Media files (tương đương với Laravel storage/app/public)

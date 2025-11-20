@@ -104,21 +104,48 @@
         </div>
     </div>
 
+    <script src="/static/js/api.js"></script>
     <script>
-        // Placeholder for future API integration
-        document.getElementById('registerForm').addEventListener('submit', function(e) {
+        document.getElementById('registerForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             
+            const name = document.getElementById('name').value;
+            const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
             const passwordConfirm = document.getElementById('passwordConfirm').value;
+            const errorEl = document.getElementById('errorMessage');
+            const successEl = document.getElementById('successMessage');
+            const submitBtn = e.target.querySelector('button[type="submit"]');
             
+            // Clear previous messages
+            errorEl.classList.add('hidden');
+            successEl.classList.add('hidden');
+            
+            // Validate passwords match
             if (password !== passwordConfirm) {
                 showError('Passwords do not match');
                 return;
             }
             
-            // API integration will be added later
-            console.log('Register form submitted');
+            // Disable button
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Creating account...';
+            
+            try {
+                await AuthAPI.register(name, email, password, passwordConfirm);
+                successEl.textContent = 'Account created successfully! Redirecting...';
+                successEl.classList.remove('hidden');
+                
+                // Redirect to documents page after 1 second
+                setTimeout(() => {
+                    window.location.href = '/documents.html';
+                }, 1000);
+            } catch (error) {
+                showError(error.message || 'Registration failed. Please try again.');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Create Account';
+            }
         });
 
         function showError(message) {
@@ -126,6 +153,11 @@
             errorEl.textContent = message;
             errorEl.classList.remove('hidden');
             setTimeout(() => errorEl.classList.add('hidden'), 5000);
+        }
+        
+        // Check if already logged in
+        if (TokenManager.isAuthenticated()) {
+            window.location.href = '/documents.html';
         }
     </script>
 </body>

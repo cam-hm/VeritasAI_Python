@@ -133,12 +133,34 @@
         </div>
     </div>
 
+    <script src="/static/js/api.js"></script>
     <script>
-        // Placeholder for future API integration
+        // Check authentication
+        if (!TokenManager.isAuthenticated()) {
+            window.location.href = '/login.html';
+        }
+
         const messagesContainer = document.getElementById('messages');
         const chatInput = document.getElementById('chatInput');
         const submitBtn = document.getElementById('submitBtn');
         const modelButtons = document.querySelectorAll('.model-btn');
+        
+        // Get session_id or document_id from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionId = urlParams.get('session_id');
+        const documentId = urlParams.get('document_id');
+        
+        let messages = [];
+
+        // Load existing messages on page load
+        document.addEventListener('DOMContentLoaded', async function() {
+            if (sessionId) {
+                await loadSessionMessages();
+            } else if (documentId) {
+                // Document chat - load from document detail if needed
+                // For now, start fresh
+            }
+        });
 
         // Model selection
         modelButtons.forEach(btn => {
@@ -151,6 +173,25 @@
                 this.classList.add('bg-gradient-to-r', 'from-[#667eea]', 'to-[#764ba2]', 'border-transparent', 'text-white');
             });
         });
+        
+        async function loadSessionMessages() {
+            try {
+                const session = await ChatSessionsAPI.get(sessionId);
+                if (session.messages && session.messages.length > 0) {
+                    // Clear sample messages
+                    messagesContainer.innerHTML = '';
+                    messages = [];
+                    
+                    // Load existing messages
+                    session.messages.forEach(msg => {
+                        messages.push({ role: msg.role, content: msg.content });
+                        addMessage(msg.role, msg.content, false);
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to load session messages:', error);
+            }
+        }
 
         // Auto-resize textarea
         chatInput.addEventListener('input', function() {
@@ -167,28 +208,163 @@
             }
         });
 
-        function sendMessage() {
+        async function sendMessage() {
             const message = chatInput.value.trim();
             if (!message) return;
 
             // Add user message
+            messages.push({ role: 'user', content: message });
             addMessage('user', message);
             chatInput.value = '';
             chatInput.style.height = 'auto';
+            submitBtn.disabled = true;
 
             // Show typing indicator
             showTypingIndicator();
 
-            // Simulate AI response (will be replaced with API call)
-            setTimeout(() => {
+            try {
+                // Call chat stream API
+                const response = await ChatAPI.stream(messages, sessionId, documentId);
+                
+                // Handle SSE streaming
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    let errorData;
+                    try {
+                        errorData = JSON.parse(errorText);
+                    } catch {
+                        errorData = { error: errorText || 'Request failed' };
+                    }
+                    throw new Error(errorData.error || errorData.detail || 'Chat request failed');
+                }
+                
+                // Check if response is streamable
+                if (!response.body) {
+                    throw new Error('Response body is not available');
+                }
+                
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let assistantMessage = '';
+                let messageElement = null;
+                let buffer = '';
+                let hasContent = false;
+                
                 hideTypingIndicator();
-                addMessage('assistant', 'This is a placeholder response. API integration will be added later.');
-            }, 1500);
+                
+                // Create assistant message element
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'flex gap-3 mb-6 animate-fade-in';
+                
+                const avatar = document.createElement('div');
+                avatar.className = 'w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center font-semibold text-sm bg-gradient-to-br from-[#667eea] to-[#764ba2] text-white';
+                avatar.textContent = '⚡';
+                
+                const messageContent = document.createElement('div');
+                messageContent.className = 'flex-1 px-4 py-3 rounded-xl leading-relaxed text-[15px] bg-white text-slate-800 shadow-sm';
+                messageElement = messageContent;
+                
+                messageDiv.appendChild(avatar);
+                messageDiv.appendChild(messageContent);
+                messagesContainer.appendChild(messageDiv);
+                
+                // Read stream
+                try {
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split('\n');
+                        
+                        // Keep last incomplete line in buffer
+                        buffer = lines.pop() || '';
+                        
+                        for (const line of lines) {
+                            const trimmedLine = line.trim();
+                            if (trimmedLine === '') continue;
+                            
+                            if (trimmedLine.startsWith('data: ')) {
+                                try {
+                                    const jsonStr = trimmedLine.slice(6).trim();
+                                    if (jsonStr === '[DONE]' || jsonStr === '') continue;
+                                    
+                                    const data = JSON.parse(jsonStr);
+                                    
+                                    // Handle error
+                                    if (data.error) {
+                                        throw new Error(data.error);
+                                    }
+                                    
+                                    // Handle content
+                                    if (data.content) {
+                                        hasContent = true;
+                                        assistantMessage += data.content;
+                                        messageElement.textContent = assistantMessage;
+                                        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                                    }
+                                } catch (e) {
+                                    if (e.message && e.message.includes('error')) {
+                                        throw e;
+                                    }
+                                    console.warn('Failed to parse SSE data:', trimmedLine, e);
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Process remaining buffer
+                    if (buffer.trim()) {
+                        const trimmedBuffer = buffer.trim();
+                        if (trimmedBuffer.startsWith('data: ')) {
+                            try {
+                                const jsonStr = trimmedBuffer.slice(6).trim();
+                                if (jsonStr && jsonStr !== '[DONE]') {
+                                    const data = JSON.parse(jsonStr);
+                                    if (data.error) {
+                                        throw new Error(data.error);
+                                    }
+                                    if (data.content) {
+                                        hasContent = true;
+                                        assistantMessage += data.content;
+                                        messageElement.textContent = assistantMessage;
+                                    }
+                                }
+                            } catch (e) {
+                                if (e.message && e.message.includes('error')) {
+                                    throw e;
+                                }
+                                console.warn('Failed to parse final buffer:', e);
+                            }
+                        }
+                    }
+                } catch (streamError) {
+                    // If error during streaming, show it
+                    if (messageElement && !hasContent) {
+                        messageElement.textContent = 'Error: ' + streamError.message;
+                        messageElement.className = 'flex-1 px-4 py-3 rounded-xl leading-relaxed text-[15px] bg-red-50 text-red-800 shadow-sm';
+                    }
+                    throw streamError;
+                }
+                
+                // Add to messages array
+                if (assistantMessage) {
+                    messages.push({ role: 'assistant', content: assistantMessage });
+                } else if (!hasContent) {
+                    throw new Error('No response received from server');
+                }
+            } catch (error) {
+                hideTypingIndicator();
+                addMessage('assistant', 'Error: ' + error.message);
+                console.error('Chat error:', error);
+            } finally {
+                submitBtn.disabled = false;
+            }
         }
 
-        function addMessage(role, content) {
+        function addMessage(role, content, animate = true) {
             const messageDiv = document.createElement('div');
-            messageDiv.className = `flex gap-3 mb-6 animate-fade-in`;
+            messageDiv.className = `flex gap-3 mb-6 ${animate ? 'animate-fade-in' : ''}`;
             
             const avatar = document.createElement('div');
             if (role === 'user') {
