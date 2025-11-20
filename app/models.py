@@ -139,7 +139,7 @@ class ChatSession(models.Model):
     
     # Configuration
     system_prompt = models.TextField(
-        default="You are a helpful assistant. Answer questions based on the user's uploaded documents."
+        default="You are a helpful assistant. Answer questions clearly and comprehensively. When the user asks about their uploaded documents, use the provided context. For general questions, use your knowledge to provide helpful answers."
     )
     model_provider = models.CharField(
         max_length=50,
