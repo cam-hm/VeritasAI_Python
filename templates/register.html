@@ -98,7 +98,7 @@
 
         <div class="text-center mt-6 text-slate-500 text-sm">
             Already have an account? 
-            <a href="/login.html" class="text-[#667eea] no-underline font-semibold hover:underline">
+            <a href="/login" class="text-[#667eea] no-underline font-semibold hover:underline">
                 Sign in
             </a>
         </div>
@@ -138,7 +138,7 @@
                 
                 // Redirect to documents page after 1 second
                 setTimeout(() => {
-                    window.location.href = '/documents.html';
+                    window.location.href = '/documents';
                 }, 1000);
             } catch (error) {
                 showError(error.message || 'Registration failed. Please try again.');
@@ -157,7 +157,7 @@
         
         // Check if already logged in
         if (TokenManager.isAuthenticated()) {
-            window.location.href = '/documents.html';
+            window.location.href = '/documents';
         }
     </script>
 </body>

@@ -71,7 +71,7 @@
 
         <div class="text-center mt-6 text-slate-500 text-sm">
             Don't have an account? 
-            <a href="/register.html" class="text-[#667eea] no-underline font-semibold hover:underline">
+            <a href="/register" class="text-[#667eea] no-underline font-semibold hover:underline">
                 Sign up
             </a>
         </div>
@@ -95,7 +95,7 @@
             try {
                 await AuthAPI.login(email, password);
                 // Redirect to documents page
-                window.location.href = '/documents.html';
+                window.location.href = '/documents';
             } catch (error) {
                 errorEl.textContent = error.message || 'Login failed. Please check your credentials.';
                 errorEl.classList.remove('hidden');

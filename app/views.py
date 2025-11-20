@@ -61,11 +61,6 @@ def chat_page(request):
     return render(request, 'chat.html')
 
 
-def chat_sessions_page(request):
-    """Chat sessions list page"""
-    return render(request, 'chat_sessions.html')
-
-
 def document_detail(request, document_id):
     """
     Document detail page với chat interface
@@ -767,11 +762,14 @@ def chat_stream(request):
                     if session:
                         session.message_count = ChatMessage.objects.filter(session=session).count()
                         session.last_message_at = assistant_msg.created_at
-                        # Auto-generate title from first message if not set
+                        # Auto-generate title from first message if not set or still default
                         first_message = ChatMessage.objects.filter(session=session).order_by('id').first()
-                        if not session.title and first_message and first_message.id == user_msg.id:
+                        if (not session.title or session.title == 'New Conversation') and first_message and first_message.id == user_msg.id:
                             # Use first 50 chars of first user message as title
-                            session.title = last_question[:50] + ('...' if len(last_question) > 50 else '')
+                            title = last_question[:50].strip()
+                            if len(last_question) > 50:
+                                title += '...'
+                            session.title = title if title else 'New Conversation'
                         session.save()
                 except Exception as e:
                     logger.error(f"Error saving chat messages: {e}")

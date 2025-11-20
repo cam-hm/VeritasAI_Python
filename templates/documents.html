@@ -27,7 +27,7 @@
             <h1 class="text-2xl font-bold text-slate-800">Documents</h1>
         </div>
         <div class="flex items-center gap-4">
-            <a href="/chat_sessions.html" class="text-slate-600 hover:text-slate-800 font-medium">Chat Sessions</a>
+            <a href="/chat" class="text-slate-600 hover:text-slate-800 font-medium">Chat</a>
             <button id="logoutBtn" class="px-4 py-2 text-slate-600 hover:text-slate-800 font-medium">Logout</button>
         </div>
     </div>
@@ -102,7 +102,7 @@
 
         // Check authentication
         if (!TokenManager.isAuthenticated()) {
-            window.location.href = '/login.html';
+            window.location.href = '/login';
         }
 
         // Load documents on page load
@@ -176,7 +176,7 @@
                     <div class="action-button">
                         ${doc.status === 'completed' ? `
                             <a 
-                                href="/chat.html?document_id=${doc.id}"
+                                href="/chat?document_id=${doc.id}"
                                 class="block w-full text-center px-4 py-2 bg-gradient-to-r from-[#667eea] to-[#764ba2] text-white rounded-lg font-medium hover:-translate-y-0.5 hover:shadow-lg transition"
                             >
                                 Chat with Document
@@ -322,7 +322,7 @@
                     if (actionBtn) {
                         if (doc.status === 'completed') {
                             actionBtn.innerHTML = `
-                                <a href="/chat.html?document_id=${doc.id}" class="block w-full text-center px-4 py-2 bg-gradient-to-r from-[#667eea] to-[#764ba2] text-white rounded-lg font-medium hover:-translate-y-0.5 hover:shadow-lg transition">
+                                <a href="/chat?document_id=${doc.id}" class="block w-full text-center px-4 py-2 bg-gradient-to-r from-[#667eea] to-[#764ba2] text-white rounded-lg font-medium hover:-translate-y-0.5 hover:shadow-lg transition">
                                     Chat with Document
                                 </a>
                             `;
@@ -364,7 +364,7 @@
 
         async function handleLogout() {
             await AuthAPI.logout();
-            window.location.href = '/login.html';
+            window.location.href = '/login';
         }
 
         function showMessage(message, type) {
