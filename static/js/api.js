@@ -66,7 +66,7 @@ async function apiRequest(endpoint, options = {}) {
             } else {
                 // Refresh failed, redirect to login
                 TokenManager.clearTokens();
-                window.location.href = '/login.html';
+                window.location.href = '/login';
                 throw new Error('Authentication failed');
             }
         }
