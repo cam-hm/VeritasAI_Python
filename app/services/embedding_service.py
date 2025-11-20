@@ -2,15 +2,14 @@
 Embedding Service
 Tương đương với app/Services/EmbeddingService.php trong Laravel
 
-Generate embeddings cho text chunks sử dụng Ollama hoặc OpenAI
+Generate embeddings cho text chunks sử dụng LiteLLM (supports multiple providers)
 """
 
 import asyncio
-import httpx
 from typing import List, Callable, Optional
 import logging
 from django.conf import settings as django_settings
-from .ollama_client import get_ollama_client
+from .llm_service import get_llm_provider
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +44,9 @@ class EmbeddingService:
         self.max_retries = max_retries or 3
         self.retry_delay = retry_delay or 1.0
         self.concurrency = concurrency or 5
-        self.ollama_base = getattr(django_settings, 'OLLAMA_BASE_URL', 'http://127.0.0.1:11434')
+        
+        # Use LiteLLM provider (default: ollama)
+        self.provider_name = getattr(django_settings, 'DEFAULT_LLM_PROVIDER', 'ollama')
         self.embed_model = getattr(django_settings, 'OLLAMA_EMBED_MODEL', 'nomic-embed-text')
     
     def generate_embeddings(
@@ -96,31 +97,31 @@ class EmbeddingService:
             for i in range(0, total, self.concurrency)
         ]
         
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            for batch in batches:
-                # Create tasks cho batch
-                tasks = [
-                    self._generate_single_embedding_with_retry(client, chunk)
-                    for chunk in batch
-                ]
-                
-                # Execute concurrently
-                batch_embeddings = await asyncio.gather(*tasks)
-                embeddings.extend(batch_embeddings)
-                
-                processed += len(batch)
-                if progress_callback:
-                    progress_callback(processed, total)
-                
-                # Rate limiting: small delay between batches
-                if batch != batches[-1]:
-                    await asyncio.sleep(0.05)
+        # Process batches (no longer need httpx client)
+        for batch in batches:
+            # Create tasks cho batch
+            tasks = [
+                self._generate_single_embedding_with_retry(None, chunk)
+                for chunk in batch
+            ]
+            
+            # Execute concurrently
+            batch_embeddings = await asyncio.gather(*tasks)
+            embeddings.extend(batch_embeddings)
+            
+            processed += len(batch)
+            if progress_callback:
+                progress_callback(processed, total)
+            
+            # Rate limiting: small delay between batches
+            if batch != batches[-1]:
+                await asyncio.sleep(0.05)
         
         return embeddings
     
     async def _generate_single_embedding_with_retry(
         self,
-        client: httpx.AsyncClient,
+        client,  # Kept for compatibility but not used
         chunk: str
     ) -> List[float]:
         """
@@ -162,32 +163,25 @@ class EmbeddingService:
     
     async def _generate_single_embedding(
         self,
-        client: httpx.AsyncClient,
+        client,  # Kept for compatibility but not used
         chunk: str
     ) -> List[float]:
         """
-        Generate single embedding từ Ollama API
+        Generate single embedding sử dụng LiteLLM provider
         Tương đương với Ollama::embed($chunk) trong Laravel
         
-        Note: Có thể dùng OllamaClient thay vì httpx trực tiếp
+        Note: Sử dụng LiteLLM để support multiple providers
         """
-        # Option 1: Dùng OllamaClient (recommended)
-        # ollama = get_ollama_client()
-        # return ollama.embed(chunk, self.embed_model)
+        # Use LiteLLM provider (sync call in async context)
+        # LiteLLM embed() is synchronous, so we run it in executor
+        loop = asyncio.get_event_loop()
+        provider = get_llm_provider(self.provider_name)
         
-        # Option 2: Dùng httpx trực tiếp (hiện tại - giữ để tương thích)
-        url = f"{self.ollama_base}/api/embeddings"
-        payload = {
-            "model": self.embed_model,
-            "prompt": chunk,
-        }
+        # Run sync embed() in thread pool
+        embedding = await loop.run_in_executor(
+            None,
+            lambda: provider.embed(chunk, self.embed_model)
+        )
         
-        response = await client.post(url, json=payload)
-        response.raise_for_status()
-        
-        data = response.json()
-        if "embedding" in data and isinstance(data["embedding"], list):
-            return data["embedding"]
-        else:
-            raise ValueError(f"Invalid embedding response structure: {data}")
+        return embedding
 

@@ -1,6 +1,10 @@
 """
-Ollama Client
+Ollama Client (DEPRECATED - Use LiteLLMProvider instead)
 Tương đương với Camh\\Ollama\\Facades\\Ollama trong Laravel
+
+⚠️  DEPRECATED: This module is kept for backward compatibility only.
+    New code should use LiteLLMProvider from app.services.llm_providers
+    which supports 100+ LLM providers with unified interface.
 
 Package tự viết để tương tác với Ollama API
 Giống như Laravel package camh/laravel-ollama
@@ -116,7 +120,9 @@ class OllamaClient:
         self, 
         messages: List[Dict[str, str]], 
         model: Optional[str] = None,
-        stream: bool = False
+        stream: bool = False,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None
     ) -> Dict | Iterator[Dict]:
         """
         Chat với Ollama
@@ -126,6 +132,8 @@ class OllamaClient:
             messages: List of message dicts [{'role': 'user', 'content': '...'}, ...]
             model: Model name (optional, uses default_model)
             stream: Whether to stream response
+            temperature: Temperature for response generation (0.0-1.0)
+            max_tokens: Maximum tokens in response
             
         Returns:
             Dict với 'message' key nếu stream=False
@@ -138,6 +146,15 @@ class OllamaClient:
             "messages": messages,
             "stream": stream
         }
+        
+        # Add optional parameters
+        if temperature is not None:
+            payload["options"] = payload.get("options", {})
+            payload["options"]["temperature"] = temperature
+        
+        if max_tokens is not None:
+            payload["options"] = payload.get("options", {})
+            payload["options"]["num_predict"] = max_tokens
         
         if stream:
             # Return streaming iterator

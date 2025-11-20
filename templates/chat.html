@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Chat - VeritasAI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            500: '#667eea',
+                            600: '#764ba2',
+                        }
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.3s ease',
+                        'typing': 'typing 1.4s infinite',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0', transform: 'translateY(10px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        },
+                        typing: {
+                            '0%, 60%, 100%': { transform: 'translateY(0)', opacity: '0.5' },
+                            '30%': { transform: 'translateY(-10px)', opacity: '1' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .typing-dot:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        .typing-dot:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 h-screen flex flex-col font-sans">
+    <!-- Header -->
+    <div class="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm">
+        <div class="flex flex-col">
+            <div class="text-xs text-slate-400 mb-1">Pages / AI Chat</div>
+            <div class="text-2xl font-bold text-slate-800">AI Chat</div>
+        </div>
+        <div class="flex items-center gap-4">
+            <button class="w-10 h-10 rounded-full border-none bg-slate-100 cursor-pointer flex items-center justify-center transition-all duration-200 hover:bg-slate-200" title="Dark mode">
+                <svg class="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+                </svg>
+            </button>
+            <button class="w-10 h-10 rounded-full border-none bg-slate-100 cursor-pointer flex items-center justify-center transition-all duration-200 hover:bg-slate-200" title="Help">
+                <svg class="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+            </button>
+            <button class="w-10 h-10 rounded-full border-none bg-slate-100 cursor-pointer flex items-center justify-center transition-all duration-200 hover:bg-slate-200" title="Logout">
+                <svg class="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+                </svg>
+            </button>
+            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-[#667eea] to-[#764ba2] flex items-center justify-center text-white font-semibold cursor-pointer">
+                JD
+            </div>
+        </div>
+    </div>
+
+    <!-- Model Selection -->
+    <div class="bg-white px-6 py-5 border-b border-slate-200 flex justify-center gap-3">
+        <button class="model-btn px-5 py-2.5 border-2 border-slate-200 rounded-full bg-gradient-to-r from-[#667eea] to-[#764ba2] border-transparent text-white flex items-center gap-2 text-sm font-medium transition-all duration-200" data-model="gpt-3.5">
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M13 3L4 14v7h6v-6h6v6h6v-7L13 3zm-2 16H6v-5l5-5 5 5v5h-5z"/>
+            </svg>
+            GPT-3.5
+        </button>
+        <button class="model-btn px-5 py-2.5 border-2 border-slate-200 rounded-full bg-white text-slate-500 flex items-center gap-2 text-sm font-medium transition-all duration-200 hover:bg-slate-50" data-model="gpt-4">
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M13 3L4 14v7h6v-6h6v6h6v-7L13 3zm-2 16H6v-5l5-5 5 5v5h-5z"/>
+            </svg>
+            GPT-4
+        </button>
+    </div>
+
+    <!-- Chat Container -->
+    <div class="flex-1 overflow-y-auto p-6 bg-slate-50 relative">
+        <!-- Background decoration -->
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] bg-gradient-to-br from-[#667eea]/5 to-[#764ba2]/5 rounded-full opacity-30 z-0"></div>
+        
+        <div class="relative z-10 max-w-3xl mx-auto" id="messages">
+            <!-- Sample messages -->
+            <div class="flex gap-3 mb-6 animate-fade-in">
+                <div class="w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center font-semibold text-sm bg-slate-200 text-slate-600">
+                    U
+                </div>
+                <div class="flex-1 px-4 py-3 rounded-xl leading-relaxed text-[15px] bg-slate-100 text-slate-800">
+                    What's your name?
+                </div>
+            </div>
+            <div class="flex gap-3 mb-6 animate-fade-in">
+                <div class="w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center font-semibold text-sm bg-gradient-to-br from-[#667eea] to-[#764ba2] text-white">
+                    ⚡
+                </div>
+                <div class="flex-1 px-4 py-3 rounded-xl leading-relaxed text-[15px] bg-white text-slate-800 shadow-sm">
+                    My name is VeritasAI. I am a friendly and formal AI assistant designed to help you interact with your documents. I can answer questions, provide insights, and assist with document-based queries. How can I assist you today?
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Input Area -->
+    <div class="bg-white border-t border-slate-200 px-6 py-5">
+        <div class="max-w-3xl mx-auto flex gap-3 items-center">
+            <div class="flex-1 relative">
+                <textarea 
+                    class="w-full px-4 py-3.5 border-2 border-slate-200 rounded-xl text-[15px] font-sans resize-none min-h-[56px] max-h-[120px] transition-all duration-200 bg-slate-50 focus:outline-none focus:border-[#667eea] focus:bg-white focus:ring-4 focus:ring-[#667eea]/10" 
+                    id="chatInput" 
+                    placeholder="Type your message here..."
+                    rows="1"
+                ></textarea>
+            </div>
+            <button class="px-6 py-3 bg-gradient-to-r from-[#667eea] to-[#764ba2] text-white border-none rounded-xl text-[15px] font-semibold cursor-pointer transition-all duration-200 whitespace-nowrap hover:-translate-y-0.5 hover:shadow-[0_10px_25px_rgba(102,126,234,0.3)] active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none" id="submitBtn">
+                Submit
+            </button>
+        </div>
+        <div class="text-center text-slate-400 text-xs mt-3">
+            Free Research Preview. VeritasAI may produce inaccurate information. Consider checking important information.
+        </div>
+    </div>
+
+    <script src="/static/js/api.js"></script>
+    <script>
+        // Check authentication
+        if (!TokenManager.isAuthenticated()) {
+            window.location.href = '/login.html';
+        }
+
+        const messagesContainer = document.getElementById('messages');
+        const chatInput = document.getElementById('chatInput');
+        const submitBtn = document.getElementById('submitBtn');
+        const modelButtons = document.querySelectorAll('.model-btn');
+        
+        // Get session_id or document_id from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionId = urlParams.get('session_id');
+        const documentId = urlParams.get('document_id');
+        
+        let messages = [];
+
+        // Load existing messages on page load
+        document.addEventListener('DOMContentLoaded', async function() {
+            if (sessionId) {
+                await loadSessionMessages();
+            } else if (documentId) {
+                // Document chat - load from document detail if needed
+                // For now, start fresh
+            }
+        });
+
+        // Model selection
+        modelButtons.forEach(btn => {
+            btn.addEventListener('click', function() {
+                modelButtons.forEach(b => {
+                    b.classList.remove('bg-gradient-to-r', 'from-[#667eea]', 'to-[#764ba2]', 'border-transparent', 'text-white');
+                    b.classList.add('bg-white', 'border-slate-200', 'text-slate-500');
+                });
+                this.classList.remove('bg-white', 'border-slate-200', 'text-slate-500');
+                this.classList.add('bg-gradient-to-r', 'from-[#667eea]', 'to-[#764ba2]', 'border-transparent', 'text-white');
+            });
+        });
+        
+        async function loadSessionMessages() {
+            try {
+                const session = await ChatSessionsAPI.get(sessionId);
+                if (session.messages && session.messages.length > 0) {
+                    // Clear sample messages
+                    messagesContainer.innerHTML = '';
+                    messages = [];
+                    
+                    // Load existing messages
+                    session.messages.forEach(msg => {
+                        messages.push({ role: msg.role, content: msg.content });
+                        addMessage(msg.role, msg.content, false);
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to load session messages:', error);
+            }
+        }
+
+        // Auto-resize textarea
+        chatInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+        });
+
+        // Submit message
+        submitBtn.addEventListener('click', sendMessage);
+        chatInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        async function sendMessage() {
+            const message = chatInput.value.trim();
+            if (!message) return;
+
+            // Add user message
+            messages.push({ role: 'user', content: message });
+            addMessage('user', message);
+            chatInput.value = '';
+            chatInput.style.height = 'auto';
+            submitBtn.disabled = true;
+
+            // Show typing indicator
+            showTypingIndicator();
+
+            try {
+                // Call chat stream API
+                const response = await ChatAPI.stream(messages, sessionId, documentId);
+                
+                // Handle SSE streaming
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    let errorData;
+                    try {
+                        errorData = JSON.parse(errorText);
+                    } catch {
+                        errorData = { error: errorText || 'Request failed' };
+                    }
+                    throw new Error(errorData.error || errorData.detail || 'Chat request failed');
+                }
+                
+                // Check if response is streamable
+                if (!response.body) {
+                    throw new Error('Response body is not available');
+                }
+                
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let assistantMessage = '';
+                let messageElement = null;
+                let buffer = '';
+                let hasContent = false;
+                
+                hideTypingIndicator();
+                
+                // Create assistant message element
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'flex gap-3 mb-6 animate-fade-in';
+                
+                const avatar = document.createElement('div');
+                avatar.className = 'w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center font-semibold text-sm bg-gradient-to-br from-[#667eea] to-[#764ba2] text-white';
+                avatar.textContent = '⚡';
+                
+                const messageContent = document.createElement('div');
+                messageContent.className = 'flex-1 px-4 py-3 rounded-xl leading-relaxed text-[15px] bg-white text-slate-800 shadow-sm';
+                messageElement = messageContent;
+                
+                messageDiv.appendChild(avatar);
+                messageDiv.appendChild(messageContent);
+                messagesContainer.appendChild(messageDiv);
+                
+                // Read stream
+                try {
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split('\n');
+                        
+                        // Keep last incomplete line in buffer
+                        buffer = lines.pop() || '';
+                        
+                        for (const line of lines) {
+                            const trimmedLine = line.trim();
+                            if (trimmedLine === '') continue;
+                            
+                            if (trimmedLine.startsWith('data: ')) {
+                                try {
+                                    const jsonStr = trimmedLine.slice(6).trim();
+                                    if (jsonStr === '[DONE]' || jsonStr === '') continue;
+                                    
+                                    const data = JSON.parse(jsonStr);
+                                    
+                                    // Handle error
+                                    if (data.error) {
+                                        throw new Error(data.error);
+                                    }
+                                    
+                                    // Handle content
+                                    if (data.content) {
+                                        hasContent = true;
+                                        assistantMessage += data.content;
+                                        messageElement.textContent = assistantMessage;
+                                        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                                    }
+                                } catch (e) {
+                                    if (e.message && e.message.includes('error')) {
+                                        throw e;
+                                    }
+                                    console.warn('Failed to parse SSE data:', trimmedLine, e);
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Process remaining buffer
+                    if (buffer.trim()) {
+                        const trimmedBuffer = buffer.trim();
+                        if (trimmedBuffer.startsWith('data: ')) {
+                            try {
+                                const jsonStr = trimmedBuffer.slice(6).trim();
+                                if (jsonStr && jsonStr !== '[DONE]') {
+                                    const data = JSON.parse(jsonStr);
+                                    if (data.error) {
+                                        throw new Error(data.error);
+                                    }
+                                    if (data.content) {
+                                        hasContent = true;
+                                        assistantMessage += data.content;
+                                        messageElement.textContent = assistantMessage;
+                                    }
+                                }
+                            } catch (e) {
+                                if (e.message && e.message.includes('error')) {
+                                    throw e;
+                                }
+                                console.warn('Failed to parse final buffer:', e);
+                            }
+                        }
+                    }
+                } catch (streamError) {
+                    // If error during streaming, show it
+                    if (messageElement && !hasContent) {
+                        messageElement.textContent = 'Error: ' + streamError.message;
+                        messageElement.className = 'flex-1 px-4 py-3 rounded-xl leading-relaxed text-[15px] bg-red-50 text-red-800 shadow-sm';
+                    }
+                    throw streamError;
+                }
+                
+                // Add to messages array
+                if (assistantMessage) {
+                    messages.push({ role: 'assistant', content: assistantMessage });
+                } else if (!hasContent) {
+                    throw new Error('No response received from server');
+                }
+            } catch (error) {
+                hideTypingIndicator();
+                addMessage('assistant', 'Error: ' + error.message);
+                console.error('Chat error:', error);
+            } finally {
+                submitBtn.disabled = false;
+            }
+        }
+
+        function addMessage(role, content, animate = true) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `flex gap-3 mb-6 ${animate ? 'animate-fade-in' : ''}`;
+            
+            const avatar = document.createElement('div');
+            if (role === 'user') {
+                avatar.className = 'w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center font-semibold text-sm bg-slate-200 text-slate-600';
+                avatar.textContent = 'U';
+            } else {
+                avatar.className = 'w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center font-semibold text-sm bg-gradient-to-br from-[#667eea] to-[#764ba2] text-white';
+                avatar.textContent = '⚡';
+            }
+            
+            const messageContent = document.createElement('div');
+            if (role === 'user') {
+                messageContent.className = 'flex-1 px-4 py-3 rounded-xl leading-relaxed text-[15px] bg-slate-100 text-slate-800';
+            } else {
+                messageContent.className = 'flex-1 px-4 py-3 rounded-xl leading-relaxed text-[15px] bg-white text-slate-800 shadow-sm';
+            }
+            messageContent.textContent = content;
+            
+            messageDiv.appendChild(avatar);
+            messageDiv.appendChild(messageContent);
+            
+            messagesContainer.appendChild(messageDiv);
+            
+            // Scroll to bottom
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function showTypingIndicator() {
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'flex gap-3 mb-6';
+            typingDiv.id = 'typingIndicator';
+            
+            const avatar = document.createElement('div');
+            avatar.className = 'w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center font-semibold text-sm bg-gradient-to-br from-[#667eea] to-[#764ba2] text-white';
+            avatar.textContent = '⚡';
+            
+            const typingContent = document.createElement('div');
+            typingContent.className = 'flex-1 px-4 py-3 rounded-xl bg-white shadow-sm flex gap-1';
+            for (let i = 0; i < 3; i++) {
+                const dot = document.createElement('div');
+                dot.className = 'w-2 h-2 rounded-full bg-slate-400 animate-typing typing-dot';
+                typingContent.appendChild(dot);
+            }
+            
+            typingDiv.appendChild(avatar);
+            typingDiv.appendChild(typingContent);
+            messagesContainer.appendChild(typingDiv);
+            
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function hideTypingIndicator() {
+            const indicator = document.getElementById('typingIndicator');
+            if (indicator) {
+                indicator.remove();
+            }
+        }
+    </script>
+</body>
+</html>

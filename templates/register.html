@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register - VeritasAI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            500: '#667eea',
+                            600: '#764ba2',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gradient-to-br from-[#667eea] to-[#764ba2] min-h-screen flex items-center justify-center p-5">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-10">
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold bg-gradient-to-r from-[#667eea] to-[#764ba2] bg-clip-text text-transparent">
+                ⚡ VeritasAI
+            </h1>
+            <p class="text-slate-500 text-sm mt-2">Create your account</p>
+        </div>
+
+        <div id="errorMessage" class="hidden bg-red-100 text-red-600 p-3 rounded-lg text-sm mb-5"></div>
+        <div id="successMessage" class="hidden bg-green-100 text-green-600 p-3 rounded-lg text-sm mb-5"></div>
+
+        <form id="registerForm">
+            <div class="mb-5">
+                <label for="name" class="block text-slate-700 text-sm font-medium mb-2">Full Name</label>
+                <input 
+                    type="text" 
+                    id="name" 
+                    name="name" 
+                    placeholder="Enter your full name"
+                    required
+                    class="w-full px-4 py-3 border-2 border-slate-200 rounded-lg text-base transition-all duration-300 bg-slate-50 focus:outline-none focus:border-[#667eea] focus:bg-white focus:ring-4 focus:ring-[#667eea]/10"
+                >
+            </div>
+
+            <div class="mb-5">
+                <label for="email" class="block text-slate-700 text-sm font-medium mb-2">Email</label>
+                <input 
+                    type="email" 
+                    id="email" 
+                    name="email" 
+                    placeholder="Enter your email"
+                    required
+                    class="w-full px-4 py-3 border-2 border-slate-200 rounded-lg text-base transition-all duration-300 bg-slate-50 focus:outline-none focus:border-[#667eea] focus:bg-white focus:ring-4 focus:ring-[#667eea]/10"
+                >
+            </div>
+
+            <div class="mb-5">
+                <label for="password" class="block text-slate-700 text-sm font-medium mb-2">Password</label>
+                <input 
+                    type="password" 
+                    id="password" 
+                    name="password" 
+                    placeholder="Create a password"
+                    required
+                    minlength="8"
+                    class="w-full px-4 py-3 border-2 border-slate-200 rounded-lg text-base transition-all duration-300 bg-slate-50 focus:outline-none focus:border-[#667eea] focus:bg-white focus:ring-4 focus:ring-[#667eea]/10"
+                >
+                <small class="block text-slate-400 text-xs mt-1">Must be at least 8 characters</small>
+            </div>
+
+            <div class="mb-5">
+                <label for="passwordConfirm" class="block text-slate-700 text-sm font-medium mb-2">Confirm Password</label>
+                <input 
+                    type="password" 
+                    id="passwordConfirm" 
+                    name="password_confirm" 
+                    placeholder="Confirm your password"
+                    required
+                    class="w-full px-4 py-3 border-2 border-slate-200 rounded-lg text-base transition-all duration-300 bg-slate-50 focus:outline-none focus:border-[#667eea] focus:bg-white focus:ring-4 focus:ring-[#667eea]/10"
+                >
+            </div>
+
+            <button 
+                type="submit" 
+                class="w-full py-3.5 bg-gradient-to-r from-[#667eea] to-[#764ba2] text-white border-none rounded-lg text-base font-semibold cursor-pointer transition-all duration-300 mt-2 hover:-translate-y-0.5 hover:shadow-[0_10px_25px_rgba(102,126,234,0.3)] active:translate-y-0"
+            >
+                Create Account
+            </button>
+        </form>
+
+        <div class="text-center my-6 relative text-slate-400 text-sm">
+            <span class="relative z-10 bg-white px-2">or</span>
+            <div class="absolute top-1/2 left-0 right-0 h-px bg-slate-200"></div>
+        </div>
+
+        <div class="text-center mt-6 text-slate-500 text-sm">
+            Already have an account? 
+            <a href="/login.html" class="text-[#667eea] no-underline font-semibold hover:underline">
+                Sign in
+            </a>
+        </div>
+    </div>
+
+    <script src="/static/js/api.js"></script>
+    <script>
+        document.getElementById('registerForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const name = document.getElementById('name').value;
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const passwordConfirm = document.getElementById('passwordConfirm').value;
+            const errorEl = document.getElementById('errorMessage');
+            const successEl = document.getElementById('successMessage');
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            
+            // Clear previous messages
+            errorEl.classList.add('hidden');
+            successEl.classList.add('hidden');
+            
+            // Validate passwords match
+            if (password !== passwordConfirm) {
+                showError('Passwords do not match');
+                return;
+            }
+            
+            // Disable button
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Creating account...';
+            
+            try {
+                await AuthAPI.register(name, email, password, passwordConfirm);
+                successEl.textContent = 'Account created successfully! Redirecting...';
+                successEl.classList.remove('hidden');
+                
+                // Redirect to documents page after 1 second
+                setTimeout(() => {
+                    window.location.href = '/documents.html';
+                }, 1000);
+            } catch (error) {
+                showError(error.message || 'Registration failed. Please try again.');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Create Account';
+            }
+        });
+
+        function showError(message) {
+            const errorEl = document.getElementById('errorMessage');
+            errorEl.textContent = message;
+            errorEl.classList.remove('hidden');
+            setTimeout(() => errorEl.classList.add('hidden'), 5000);
+        }
+        
+        // Check if already logged in
+        if (TokenManager.isAuthenticated()) {
+            window.location.href = '/documents.html';
+        }
+    </script>
+</body>
+</html>

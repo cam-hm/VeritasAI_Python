@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - VeritasAI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            500: '#667eea',
+                            600: '#764ba2',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gradient-to-br from-[#667eea] to-[#764ba2] min-h-screen flex items-center justify-center p-5">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-10">
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold bg-gradient-to-r from-[#667eea] to-[#764ba2] bg-clip-text text-transparent">
+                ⚡ VeritasAI
+            </h1>
+            <p class="text-slate-500 text-sm mt-2">Your intelligent document assistant</p>
+        </div>
+
+        <div id="errorMessage" class="hidden bg-red-100 text-red-600 p-3 rounded-lg text-sm mb-5"></div>
+
+        <form id="loginForm">
+            <div class="mb-6">
+                <label for="email" class="block text-slate-700 text-sm font-medium mb-2">Email</label>
+                <input 
+                    type="email" 
+                    id="email" 
+                    name="email" 
+                    placeholder="Enter your email"
+                    required
+                    class="w-full px-4 py-3 border-2 border-slate-200 rounded-lg text-base transition-all duration-300 bg-slate-50 focus:outline-none focus:border-[#667eea] focus:bg-white focus:ring-4 focus:ring-[#667eea]/10"
+                >
+            </div>
+
+            <div class="mb-6">
+                <label for="password" class="block text-slate-700 text-sm font-medium mb-2">Password</label>
+                <input 
+                    type="password" 
+                    id="password" 
+                    name="password" 
+                    placeholder="Enter your password"
+                    required
+                    class="w-full px-4 py-3 border-2 border-slate-200 rounded-lg text-base transition-all duration-300 bg-slate-50 focus:outline-none focus:border-[#667eea] focus:bg-white focus:ring-4 focus:ring-[#667eea]/10"
+                >
+            </div>
+
+            <button 
+                type="submit" 
+                class="w-full py-3.5 bg-gradient-to-r from-[#667eea] to-[#764ba2] text-white border-none rounded-lg text-base font-semibold cursor-pointer transition-all duration-300 mt-2 hover:-translate-y-0.5 hover:shadow-[0_10px_25px_rgba(102,126,234,0.3)] active:translate-y-0"
+            >
+                Sign In
+            </button>
+        </form>
+
+        <div class="text-center my-6 relative text-slate-400 text-sm">
+            <span class="relative z-10 bg-white px-2">or</span>
+            <div class="absolute top-1/2 left-0 right-0 h-px bg-slate-200"></div>
+        </div>
+
+        <div class="text-center mt-6 text-slate-500 text-sm">
+            Don't have an account? 
+            <a href="/register.html" class="text-[#667eea] no-underline font-semibold hover:underline">
+                Sign up
+            </a>
+        </div>
+    </div>
+
+    <script src="/static/js/api.js"></script>
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const errorEl = document.getElementById('errorMessage');
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            
+            // Disable button
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Signing in...';
+            errorEl.classList.add('hidden');
+            
+            try {
+                await AuthAPI.login(email, password);
+                // Redirect to documents page
+                window.location.href = '/documents.html';
+            } catch (error) {
+                errorEl.textContent = error.message || 'Login failed. Please check your credentials.';
+                errorEl.classList.remove('hidden');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Sign In';
+            }
+        });
+        
+        // Check if already logged in
+        if (TokenManager.isAuthenticated()) {
+            window.location.href = '/documents.html';
+        }
+    </script>
+</body>
+</html>
