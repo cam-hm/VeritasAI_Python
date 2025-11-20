@@ -184,21 +184,42 @@ const DocumentsAPI = {
     
     async upload(file, category = null, tags = []) {
         const url = `${API_BASE_URL}/documents/upload/`;
-        const token = TokenManager.getAccessToken();
         
         const formData = new FormData();
         formData.append('file', file);
         if (category) formData.append('category', category);
         if (tags.length) formData.append('tags', JSON.stringify(tags));
         
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                // Don't set Content-Type, let browser set it with boundary for FormData
-            },
-            body: formData,
-        });
+        // Helper function to make upload request with token
+        const makeUploadRequest = async (token) => {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    // Don't set Content-Type, let browser set it with boundary for FormData
+                },
+                body: formData,
+            });
+            return response;
+        };
+        
+        let token = TokenManager.getAccessToken();
+        let response = await makeUploadRequest(token);
+        
+        // Handle 401 - try refresh token
+        if (response.status === 401 && token) {
+            const refreshed = await refreshAccessToken();
+            if (refreshed) {
+                // Retry with new token
+                token = TokenManager.getAccessToken();
+                response = await makeUploadRequest(token);
+            } else {
+                // Refresh failed, redirect to login
+                TokenManager.clearTokens();
+                window.location.href = '/login';
+                throw new Error('Authentication failed');
+            }
+        }
         
         if (!response.ok) {
             const error = await response.json().catch(() => ({ error: 'Upload failed' }));
