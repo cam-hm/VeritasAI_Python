@@ -53,6 +53,9 @@ class LiteLLMProvider(LLMProvider):
         # Set base URL for OpenAI-compatible providers
         if base_url:
             self._set_base_url(base_url)
+        elif self.provider_name == 'ollama':
+            # For Ollama, set base URL from settings
+            self._set_ollama_base_url()
     
     def _get_default_model(self) -> str:
         """Get default model based on provider"""
@@ -114,6 +117,19 @@ class LiteLLMProvider(LLMProvider):
             # This is handled in the model name format: "custom_provider/model_name"
             pass  # Will be handled in model name
     
+    def _set_ollama_base_url(self):
+        """Set Ollama base URL for LiteLLM"""
+        import os
+        from django.conf import settings as django_settings
+        ollama_url = getattr(django_settings, 'OLLAMA_BASE_URL', 'http://127.0.0.1:11434')
+        # Set environment variable for LiteLLM to use
+        os.environ['OLLAMA_API_BASE'] = ollama_url
+        # Also set in litellm config
+        import litellm
+        if not hasattr(litellm, '_ollama_base_url_set'):
+            litellm.api_base = ollama_url
+            litellm._ollama_base_url_set = True
+    
     @property
     def provider_name(self) -> str:
         return self._provider_name
@@ -154,15 +170,29 @@ class LiteLLMProvider(LLMProvider):
         # Call LiteLLM embedding with error handling and timeout
         try:
             import litellm
+            import os
+            from django.conf import settings as django_settings
+            
             # Set timeout for Ollama (default is 60s, but can be too short for large chunks)
             original_timeout = getattr(litellm, 'request_timeout', 60)
             if self.provider_name == 'ollama':
                 litellm.request_timeout = 120  # 2 minutes for Ollama
-            
-            response = embedding(
-                model=formatted_model,
-                input=prompt
-            )
+                # Ensure Ollama base URL is set - this is critical for correct connection
+                ollama_url = getattr(django_settings, 'OLLAMA_BASE_URL', 'http://127.0.0.1:11434')
+                # Set environment variable for LiteLLM
+                os.environ['OLLAMA_API_BASE'] = ollama_url
+                # Also pass api_base explicitly in embedding call to ensure correct URL
+                # This prevents LiteLLM from using random internal ports
+                response = embedding(
+                    model=formatted_model,
+                    input=prompt,
+                    api_base=ollama_url
+                )
+            else:
+                response = embedding(
+                    model=formatted_model,
+                    input=prompt
+                )
             
             # Restore original timeout
             if self.provider_name == 'ollama':

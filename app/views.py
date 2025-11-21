@@ -184,8 +184,8 @@ def document_upload(request):
     file_content = file.read()
     file_hash = hashlib.sha256(file_content).hexdigest()
     
-    # Check duplicate
-    existing = Document.objects.filter(file_hash=file_hash).first()
+    # Check duplicate - only for the current user
+    existing = Document.objects.filter(user=request.user, file_hash=file_hash).first()
     if existing:
         return Response({
             'message': 'File already exists',
