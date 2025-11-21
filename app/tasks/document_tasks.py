@@ -188,11 +188,15 @@ def _process_document_internal(document_id: int):
         for index, chunk_content in enumerate(chunk_contents):
             if index < len(embeddings) and embeddings[index]:
                 # Pre-compute token count for performance optimization
-                token_count = token_service.estimate_tokens(chunk_content)
+                # Include document name in chunk content to help AI identify document context
+                # Format: [Document: filename.pdf] content...
+                document_name_prefix = f"[Document: {document.name}] "
+                chunk_with_metadata = document_name_prefix + chunk_content
+                token_count = token_service.estimate_tokens(chunk_with_metadata)
                 
                 DocumentChunk.objects.create(
                     document=document,
-                    content=chunk_content,
+                    content=chunk_with_metadata,  # Include document name in content
                     embedding=embeddings[index],
                     token_count=token_count,  # Store pre-computed token count
                 )
