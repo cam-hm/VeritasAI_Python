@@ -36,8 +36,9 @@ class TestDocument:
         assert document.category is None  # Optional field
         assert document.tags == []  # Default empty list
     
-    def test_document_unique_file_hash(self, user):
-        """Test that file_hash must be unique"""
+    def test_document_unique_file_hash_same_user(self, user):
+        """Test that file_hash must be unique per user - same user cannot upload duplicate"""
+        # User uploads a file
         Document.objects.create(
             user=user,
             name='test1.pdf',
@@ -46,7 +47,7 @@ class TestDocument:
             file_size=1024
         )
         
-        # Try to create another document with same hash
+        # User cannot upload the same file again (same user, same hash)
         with pytest.raises(IntegrityError):
             Document.objects.create(
                 user=user,
@@ -55,6 +56,30 @@ class TestDocument:
                 path='storage/documents/same_hash_2.pdf',
                 file_size=2048
             )
+    
+    def test_document_unique_file_hash_different_users(self, user, another_user):
+        """Test that different users can upload files with the same hash"""
+        # User 1 uploads a file
+        doc1 = Document.objects.create(
+            user=user,
+            name='test1.pdf',
+            file_hash='same_hash',
+            path='storage/documents/same_hash.pdf',
+            file_size=1024
+        )
+        assert doc1.id is not None
+        
+        # User 2 can upload the same file (different user, same hash is OK)
+        doc2 = Document.objects.create(
+            user=another_user,
+            name='test1.pdf',
+            file_hash='same_hash',
+            path='storage/documents/same_hash_user2.pdf',
+            file_size=1024
+        )
+        assert doc2.id is not None
+        assert doc2.user == another_user
+        assert doc2.file_hash == doc1.file_hash  # Same hash, different users
     
     def test_document_cascade_delete(self, user):
         """Test that document is deleted when user is deleted"""

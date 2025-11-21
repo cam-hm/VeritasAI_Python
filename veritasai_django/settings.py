@@ -207,8 +207,14 @@ else:
     }
 
 # App-specific settings (tương đương với config/services.php trong Laravel)
+# LLM Provider Configuration
+DEFAULT_LLM_PROVIDER = env('DEFAULT_LLM_PROVIDER', default='ollama')
+
+# Ollama Configuration (Local LLM Provider)
 OLLAMA_BASE_URL = env('OLLAMA_BASE_URL', default='http://127.0.0.1:11434')
 OLLAMA_EMBED_MODEL = env('OLLAMA_EMBED_MODEL', default='nomic-embed-text')
 OLLAMA_CHAT_MODEL = env('OLLAMA_CHAT_MODEL', default='llama3.1')
+
+# Storage Configuration
 STORAGE_PATH = env('STORAGE_PATH', default=str(BASE_DIR / 'storage'))
 

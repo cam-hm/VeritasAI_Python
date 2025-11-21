@@ -46,7 +46,7 @@ class Document(models.Model):
     error_message = models.TextField(null=True, blank=True)
     num_chunks = models.IntegerField(default=0)
     embedding_model = models.CharField(max_length=100, null=True, blank=True)
-    file_hash = models.CharField(max_length=64, null=True, blank=True, unique=True)
+    file_hash = models.CharField(max_length=64, null=True, blank=True)  # Removed unique=True, now unique per user
     file_size = models.IntegerField(null=True, blank=True)  # Size in bytes
     
     # New fields for MVP
@@ -67,6 +67,8 @@ class Document(models.Model):
             models.Index(fields=['user', 'created_at']),
             models.Index(fields=['file_hash']),
         ]
+        # Ensure file_hash is unique per user (not globally)
+        unique_together = [['user', 'file_hash']]
     
     def __str__(self):
         return self.name

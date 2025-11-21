@@ -41,13 +41,19 @@ class EmbeddingService:
         Tương đương với constructor trong Laravel EmbeddingService
         """
         self.batch_size = batch_size or 10
-        self.max_retries = max_retries or 3
-        self.retry_delay = retry_delay or 1.0
-        self.concurrency = concurrency or 3  # Reduced from 5 to avoid overwhelming Ollama
+        self.max_retries = max_retries or 3  # Maximum 3 retries as requested
+        self.retry_delay = retry_delay or 2.0  # 2.0 seconds between retries
+        # Dynamic concurrency: lower for large batches to avoid overwhelming Ollama
+        # Will be adjusted based on chunk count
+        self.concurrency = concurrency or 2  # Default: 2, but can be adjusted per request
         
         # Use LiteLLM provider (default: ollama)
+        # For Ollama, we'll use direct OllamaClient to avoid LiteLLM's random port issues
         self.provider_name = getattr(django_settings, 'DEFAULT_LLM_PROVIDER', 'ollama')
         self.embed_model = getattr(django_settings, 'OLLAMA_EMBED_MODEL', 'nomic-embed-text')
+        
+        # For Ollama, prefer direct client over LiteLLM to avoid random port issues
+        self.use_direct_ollama = (self.provider_name == 'ollama')
         
         # Log configuration for debugging
         logger.info(
@@ -101,14 +107,40 @@ class EmbeddingService:
         embeddings = []
         processed = 0
         
-        # Process in batches với concurrency limit
+        # Dynamic concurrency: adjust based on total chunks
+        # For large files (>200 chunks), use lower concurrency to avoid overwhelming Ollama
+        # For smaller files, can use higher concurrency
+        if total > 200:
+            # Large file: use lower concurrency and longer delays
+            effective_concurrency = 1  # Process one at a time for very large files
+            batch_delay = 2.0  # Longer delay between batches
+        elif total > 100:
+            # Medium file: moderate concurrency
+            effective_concurrency = 2
+            batch_delay = 1.0
+        else:
+            # Small file: can use higher concurrency
+            effective_concurrency = min(self.concurrency, 3)
+            batch_delay = 0.5
+        
+        logger.info(
+            f"Embedding configuration for {total} chunks",
+            extra={
+                'total_chunks': total,
+                'concurrency': effective_concurrency,
+                'estimated_batches': (total + effective_concurrency - 1) // effective_concurrency,
+                'batch_delay': batch_delay,
+            }
+        )
+        
+        # Process in batches với dynamic concurrency
         batches = [
-            chunks[i:i + self.concurrency] 
-            for i in range(0, total, self.concurrency)
+            chunks[i:i + effective_concurrency] 
+            for i in range(0, total, effective_concurrency)
         ]
         
         # Process batches (no longer need httpx client)
-        for batch in batches:
+        for batch_idx, batch in enumerate(batches):
             # Create tasks cho batch
             tasks = [
                 self._generate_single_embedding_with_retry(None, chunk)
@@ -123,9 +155,10 @@ class EmbeddingService:
             if progress_callback:
                 progress_callback(processed, total)
             
-            # Rate limiting: delay between batches to avoid overwhelming Ollama
-            if batch != batches[-1]:
-                await asyncio.sleep(0.2)  # Increased from 0.05 to 0.2
+            # Rate limiting: delay between batches (dynamic based on file size)
+            # Skip delay for last batch
+            if batch_idx < len(batches) - 1:
+                await asyncio.sleep(batch_delay)
         
         return embeddings
     
@@ -155,9 +188,12 @@ class EmbeddingService:
                 )
                 
                 if attempts < self.max_retries:
-                    # Exponential backoff
-                    delay = self.retry_delay * (2 ** (attempts - 1))
-                    logger.info(f"Retrying embedding after {delay}s (attempt {attempts + 1}/{self.max_retries})")
+                    # Exponential backoff with jitter to avoid thundering herd
+                    import random
+                    base_delay = self.retry_delay * (2 ** (attempts - 1))
+                    jitter = random.uniform(0, 0.3 * base_delay)  # Add up to 30% jitter
+                    delay = base_delay + jitter
+                    logger.info(f"Retrying embedding after {delay:.2f}s (attempt {attempts + 1}/{self.max_retries})")
                     await asyncio.sleep(delay)
         
         # Nếu tất cả retries failed
@@ -180,21 +216,65 @@ class EmbeddingService:
         chunk: str
     ) -> List[float]:
         """
-        Generate single embedding sử dụng LiteLLM provider
-        Tương đương với Ollama::embed($chunk) trong Laravel
-        
-        Note: Sử dụng LiteLLM để support multiple providers
+        Generate single embedding
+        - For Ollama: Use direct OllamaClient (avoids LiteLLM random port issues)
+        - For other providers: Use LiteLLM
         """
-        # Use LiteLLM provider (sync call in async context)
-        # LiteLLM embed() is synchronous, so we run it in executor
         loop = asyncio.get_event_loop()
-        provider = get_llm_provider(self.provider_name)
         
-        # Run sync embed() in thread pool
-        embedding = await loop.run_in_executor(
-            None,
-            lambda: provider.embed(chunk, self.embed_model)
-        )
-        
-        return embedding
+        # For Ollama, use direct client to avoid LiteLLM's random port issues
+        if self.use_direct_ollama:
+            try:
+                from app.services.ollama_client import get_ollama_client
+                ollama_client = get_ollama_client()
+                # Run sync embed() in thread pool
+                embedding = await loop.run_in_executor(
+                    None,
+                    lambda: ollama_client.embed(chunk, self.embed_model)
+                )
+                return embedding
+            except Exception as e:
+                # If direct OllamaClient fails, try LiteLLM as fallback
+                logger.warning(
+                    f"Direct OllamaClient failed, trying LiteLLM as fallback",
+                    extra={
+                        'error': str(e),
+                        'chunk_length': len(chunk),
+                    }
+                )
+                try:
+                    provider = get_llm_provider(self.provider_name)
+                    embedding = await loop.run_in_executor(
+                        None,
+                        lambda: provider.embed(chunk, self.embed_model)
+                    )
+                    logger.info("Successfully used LiteLLM fallback")
+                    return embedding
+                except Exception as fallback_error:
+                    logger.error(
+                        f"Both OllamaClient and LiteLLM failed",
+                        extra={
+                            'ollama_error': str(e),
+                            'litellm_error': str(fallback_error),
+                        }
+                    )
+                    raise e
+        else:
+            # For non-Ollama providers, use LiteLLM directly
+            try:
+                provider = get_llm_provider(self.provider_name)
+                embedding = await loop.run_in_executor(
+                    None,
+                    lambda: provider.embed(chunk, self.embed_model)
+                )
+                return embedding
+            except Exception as e:
+                logger.error(
+                    f"LiteLLM embedding failed for {self.provider_name}",
+                    extra={
+                        'error': str(e),
+                        'chunk_length': len(chunk),
+                    }
+                )
+                raise e
 

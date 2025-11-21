@@ -7,6 +7,8 @@ Celery tasks chạy background jobs - tương đương Laravel Queue Jobs
 
 import os
 import logging
+import time
+import requests
 from datetime import datetime
 from django.utils import timezone
 from django.conf import settings as django_settings
@@ -17,6 +19,24 @@ from app.services.embedding_service import EmbeddingService
 from app.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
+
+
+def _check_ollama_health():
+    """
+    Check if Ollama is available and ready
+    Returns True if Ollama is healthy, False otherwise
+    """
+    try:
+        ollama_url = getattr(django_settings, 'OLLAMA_BASE_URL', 'http://127.0.0.1:11434')
+        
+        # Simple health check - try to list models
+        response = requests.get(f"{ollama_url}/api/tags", timeout=5)
+        if response.status_code == 200:
+            return True
+        return False
+    except Exception as e:
+        logger.warning(f"Ollama health check failed: {e}")
+        return False
 
 
 def _process_document_internal(document_id: int):
@@ -36,6 +56,18 @@ def _process_document_internal(document_id: int):
     try:
         # Get document
         document = Document.objects.get(id=document_id)
+        
+        # Health check Ollama before processing
+        from django.conf import settings as django_settings
+        provider = getattr(django_settings, 'DEFAULT_LLM_PROVIDER', 'ollama')
+        if provider == 'ollama':
+            if not _check_ollama_health():
+                error_msg = "Ollama is not available or not responding. Please check if Ollama is running."
+                logger.error(error_msg, extra={'document_id': document_id})
+                document.status = "failed"
+                document.error_message = error_msg
+                document.save()
+                raise RuntimeError(error_msg)
         
         # Mark as processing
         document.status = "processing"
@@ -110,8 +142,13 @@ def _process_document_internal(document_id: int):
                 'chunk_count': len(chunk_contents),
                 'provider': embedding_service.provider_name,
                 'model': embedding_service.embed_model,
+                'max_retries': embedding_service.max_retries,
             }
         )
+        
+        # Add small delay before embedding to avoid overwhelming Ollama when multiple docs process simultaneously
+        # This helps when multiple documents are uploaded at the same time
+        time.sleep(2)  # 2 second delay to stagger requests
         
         try:
             embeddings = embedding_service.generate_embeddings(
@@ -127,7 +164,7 @@ def _process_document_internal(document_id: int):
                 )
             )
         except Exception as e:
-            error_msg = f"Failed to generate embeddings: {str(e)}"
+            error_msg = f"Failed to generate embeddings after {embedding_service.max_retries} retries: {str(e)}"
             logger.error(
                 error_msg,
                 extra={
@@ -135,6 +172,7 @@ def _process_document_internal(document_id: int):
                     'error': str(e),
                     'error_type': type(e).__name__,
                     'chunk_count': len(chunk_contents),
+                    'max_retries': embedding_service.max_retries,
                 },
                 exc_info=True
             )
