@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VeritasAI - Enterprise RAG Chat System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            500: '#667eea',
+                            600: '#764ba2',
+                        }
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.6s ease',
+                        'slide-up': 'slideUp 0.8s ease',
+                        'float': 'float 3s ease-in-out infinite',
+                        'gradient': 'gradient 8s ease infinite',
+                        'shimmer': 'shimmer 2s linear infinite',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideUp: {
+                            '0%': { opacity: '0', transform: 'translateY(30px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        },
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0px)' },
+                            '50%': { transform: 'translateY(-20px)' },
+                        },
+                        gradient: {
+                            '0%, 100%': { backgroundPosition: '0% 50%' },
+                            '50%': { backgroundPosition: '100% 50%' },
+                        },
+                        shimmer: {
+                            '0%': { backgroundPosition: '-1000px 0' },
+                            '100%': { backgroundPosition: '1000px 0' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .fade-in-up {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: opacity 0.6s ease, transform 0.6s ease;
+        }
+        .fade-in-up.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .gradient-animated {
+            background: linear-gradient(-45deg, #667eea, #764ba2, #667eea, #764ba2);
+            background-size: 400% 400%;
+            animation: gradient 8s ease infinite;
+        }
+        .shimmer {
+            background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.2) 50%, rgba(255, 255, 255, 0) 100%);
+            background-size: 200% 100%;
+            animation: shimmer 2s infinite;
+        }
+        .icon-hover {
+            transition: all 0.3s ease;
+        }
+        .icon-hover:hover {
+            transform: scale(1.1) rotate(5deg);
+        }
+        .card-hover {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .card-hover:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+        .btn-pulse {
+            position: relative;
+            overflow: hidden;
+        }
+        .btn-pulse::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.3);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+        .btn-pulse:hover::before {
+            width: 300px;
+            height: 300px;
+        }
+        .number-circle {
+            transition: all 0.3s ease;
+        }
+        .number-circle:hover {
+            transform: scale(1.15) rotate(360deg);
+        }
+        html {
+            scroll-behavior: smooth;
+        }
+        body {
+            animation: fadeIn 0.5s ease;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+    <!-- Header -->
+    <div class="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-50 backdrop-blur-sm bg-white/95">
+        <div class="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+            <div class="flex items-center gap-2 animate-fade-in">
+                <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-[#667eea] to-[#764ba2] flex items-center justify-center icon-hover shadow-md">
+                    <span class="text-white font-bold text-xl">V</span>
+                </div>
+                <h1 class="text-2xl font-bold text-slate-800">VeritasAI</h1>
+            </div>
+            <div class="flex items-center gap-4">
+                <a href="/login" class="text-slate-600 hover:text-slate-800 font-medium transition-all duration-300 hover:scale-105">Login</a>
+                <a href="/register" class="px-4 py-2 bg-gradient-to-r from-[#667eea] to-[#764ba2] text-white rounded-lg font-semibold hover:-translate-y-0.5 hover:shadow-lg transition-all duration-300 btn-pulse relative overflow-hidden">
+                    <span class="relative z-10">Get Started</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hero Section -->
+    <section class="max-w-7xl mx-auto px-6 py-20 relative overflow-hidden">
+        <div class="absolute top-0 left-1/4 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-float"></div>
+        <div class="absolute top-0 right-1/4 w-72 h-72 bg-blue-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-float" style="animation-delay: 1s;"></div>
+        
+        <div class="text-center relative z-10">
+            <div class="fade-in-up">
+                <h2 class="text-5xl md:text-6xl font-bold text-slate-900 mb-6">
+                    AI That Understands
+                    <span class="block text-transparent bg-clip-text bg-gradient-to-r from-[#667eea] to-[#764ba2] animate-gradient">
+                        Your Documents
+                    </span>
+                </h2>
+            </div>
+            <div class="fade-in-up" style="transition-delay: 0.2s;">
+                <p class="text-xl text-slate-600 mb-4 max-w-3xl mx-auto">
+                    Enterprise RAG Chat System. Transform your documents into intelligent knowledge bases.
+                </p>
+                <p class="text-lg text-slate-500 mb-8 max-w-2xl mx-auto">
+                    Get accurate, context-aware answers from your business documents with source citations.
+                </p>
+            </div>
+            <div class="flex gap-4 justify-center flex-wrap fade-in-up" style="transition-delay: 0.4s;">
+                <a href="/register" class="px-8 py-4 bg-gradient-to-r from-[#667eea] to-[#764ba2] text-white rounded-lg font-semibold text-lg hover:-translate-y-1 hover:shadow-xl transition-all duration-300 btn-pulse relative overflow-hidden group">
+                    <span class="relative z-10 flex items-center gap-2">
+                        Start Free Trial
+                        <svg class="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                        </svg>
+                    </span>
+                </a>
+                <a href="#demo" class="px-8 py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-lg font-semibold text-lg hover:border-[#667eea] hover:text-[#667eea] transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5">
+                    Watch Demo
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Problem Section -->
+    <section class="max-w-7xl mx-auto px-6 py-16 bg-white">
+        <div class="text-center mb-12 fade-in-up">
+            <h3 class="text-3xl font-bold text-slate-900 mb-4">The Problem with Generic AI</h3>
+            <p class="text-lg text-slate-600 max-w-2xl mx-auto">
+                Traditional AI chatbots lack context from your business documents
+            </p>
+        </div>
+        
+        <div class="grid md:grid-cols-3 gap-6">
+            <div class="bg-red-50 border-2 border-red-100 rounded-xl p-6 card-hover fade-in-up">
+                <div class="w-12 h-12 rounded-lg bg-red-100 flex items-center justify-center mb-4">
+                    <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                    </svg>
+                </div>
+                <h4 class="text-xl font-semibold text-slate-800 mb-2">No Document Context</h4>
+                <p class="text-slate-600">
+                    Generic AI doesn't know your company policies, contracts, or internal documentation.
+                </p>
+            </div>
+
+            <div class="bg-red-50 border-2 border-red-100 rounded-xl p-6 card-hover fade-in-up" style="transition-delay: 0.1s">
+                <div class="w-12 h-12 rounded-lg bg-red-100 flex items-center justify-center mb-4">
+                    <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </div>
+                <h4 class="text-xl font-semibold text-slate-800 mb-2">Inaccurate Answers</h4>
+                <p class="text-slate-600">
+                    Without access to your documents, AI provides generic or incorrect information.
+                </p>
+            </div>
+
+            <div class="bg-red-50 border-2 border-red-100 rounded-xl p-6 card-hover fade-in-up" style="transition-delay: 0.2s">
+                <div class="w-12 h-12 rounded-lg bg-red-100 flex items-center justify-center mb-4">
+                    <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </div>
+                <h4 class="text-xl font-semibold text-slate-800 mb-2">No Source Verification</h4>
+                <p class="text-slate-600">
+                    Can't verify where information comes from, making it unreliable for business decisions.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Solution Section -->
+    <section class="max-w-7xl mx-auto px-6 py-20">
+        <div class="text-center mb-12 fade-in-up">
+            <h3 class="text-3xl font-bold text-slate-900 mb-4">The RAG Solution</h3>
+            <p class="text-lg text-slate-600 max-w-2xl mx-auto">
+                Retrieval-Augmented Generation combines your documents with AI intelligence
+            </p>
+        </div>
+        
+        <div class="bg-gradient-to-r from-[#667eea] to-[#764ba2] rounded-2xl p-12 text-white fade-in-up">
+            <div class="grid md:grid-cols-2 gap-8 items-center">
+                <div>
+                    <h4 class="text-3xl font-bold mb-4">Context-Aware AI</h4>
+                    <p class="text-lg mb-4 opacity-90">
+                        VeritasAI retrieves relevant information from your documents before generating answers.
+                    </p>
+                    <p class="text-lg mb-4 opacity-90">
+                        Every response is grounded in your actual business data with source citations.
+                    </p>
+                    <ul class="space-y-2 text-lg opacity-90">
+                        <li class="flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                            </svg>
+                            Accurate answers from your documents
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                            </svg>
+                            Source citations for verification
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                            </svg>
+                            Enterprise-grade security
+                        </li>
+                    </ul>
+                </div>
+                <div class="bg-white/10 backdrop-blur-sm rounded-xl p-8">
+                    <div class="space-y-4">
+                        <div class="flex items-start gap-3">
+                            <div class="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">1</div>
+                            <div>
+                                <h5 class="font-semibold mb-1">Upload Documents</h5>
+                                <p class="text-sm opacity-90">PDF, DOCX, TXT, MD files</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <div class="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">2</div>
+                            <div>
+                                <h5 class="font-semibold mb-1">AI Indexes Content</h5>
+                                <p class="text-sm opacity-90">Vector embeddings created</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <div class="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">3</div>
+                            <div>
+                                <h5 class="font-semibold mb-1">Ask Questions</h5>
+                                <p class="text-sm opacity-90">Natural language queries</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <div class="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">4</div>
+                            <div>
+                                <h5 class="font-semibold mb-1">Get Answers</h5>
+                                <p class="text-sm opacity-90">With source references</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Key Features -->
+    <section class="max-w-7xl mx-auto px-6 py-16">
+        <div class="text-center mb-12 fade-in-up">
+            <h3 class="text-3xl font-bold text-slate-900 mb-4">Enterprise Features</h3>
+            <p class="text-lg text-slate-600 max-w-2xl mx-auto">
+                Everything you need for secure, intelligent document interaction
+            </p>
+        </div>
+        
+        <div class="grid md:grid-cols-3 gap-6">
+            <div class="bg-white rounded-xl shadow-sm p-6 card-hover fade-in-up">
+                <div class="w-12 h-12 rounded-lg bg-gradient-to-br from-[#667eea] to-[#764ba2] flex items-center justify-center mb-4 icon-hover shadow-md">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                </div>
+                <h4 class="text-xl font-semibold text-slate-800 mb-2">Multi-Format Support</h4>
+                <p class="text-slate-600">
+                    Upload PDF, DOCX, TXT, and Markdown files. Automatic text extraction and processing.
+                </p>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm p-6 card-hover fade-in-up" style="transition-delay: 0.1s">
+                <div class="w-12 h-12 rounded-lg bg-gradient-to-br from-[#667eea] to-[#764ba2] flex items-center justify-center mb-4 icon-hover shadow-md">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path>
+                    </svg>
+                </div>
+                <h4 class="text-xl font-semibold text-slate-800 mb-2">Smart Context Retrieval</h4>
+                <p class="text-slate-600">
+                    Vector similarity search finds the most relevant document sections for each query.
+                </p>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm p-6 card-hover fade-in-up" style="transition-delay: 0.2s">
+                <div class="w-12 h-12 rounded-lg bg-gradient-to-br from-[#667eea] to-[#764ba2] flex items-center justify-center mb-4 icon-hover shadow-md">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+                    </svg>
+                </div>
+                <h4 class="text-xl font-semibold text-slate-800 mb-2">Source Citations</h4>
+                <p class="text-slate-600">
+                    Every answer includes document references and page numbers for verification.
+                </p>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm p-6 card-hover fade-in-up">
+                <div class="w-12 h-12 rounded-lg bg-gradient-to-br from-[#667eea] to-[#764ba2] flex items-center justify-center mb-4 icon-hover shadow-md">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                    </svg>
+                </div>
+                <h4 class="text-xl font-semibold text-slate-800 mb-2">Enterprise Security</h4>
+                <p class="text-slate-600">
+                    User-based access control, encrypted storage, and secure document processing.
+                </p>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm p-6 card-hover fade-in-up" style="transition-delay: 0.1s">
+                <div class="w-12 h-12 rounded-lg bg-gradient-to-br from-[#667eea] to-[#764ba2] flex items-center justify-center mb-4 icon-hover shadow-md">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                    </svg>
+                </div>
+                <h4 class="text-xl font-semibold text-slate-800 mb-2">Conversation History</h4>
+                <p class="text-slate-600">
+                    Save and manage chat sessions. Search through past conversations and insights.
+                </p>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm p-6 card-hover fade-in-up" style="transition-delay: 0.2s">
+                <div class="w-12 h-12 rounded-lg bg-gradient-to-br from-[#667eea] to-[#764ba2] flex items-center justify-center mb-4 icon-hover shadow-md">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                    </svg>
+                </div>
+                <h4 class="text-xl font-semibold text-slate-800 mb-2">Real-Time Streaming</h4>
+                <p class="text-slate-600">
+                    Get instant responses with streaming output. See answers appear in real-time.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works -->
+    <section class="max-w-7xl mx-auto px-6 py-16 bg-slate-100">
+        <div class="text-center mb-12 fade-in-up">
+            <h3 class="text-3xl font-bold text-slate-900 mb-4">How RAG Works</h3>
+            <p class="text-lg text-slate-600 max-w-2xl mx-auto">
+                Four-step process from document upload to intelligent answers
+            </p>
+        </div>
+        
+        <div class="grid md:grid-cols-4 gap-6">
+            <div class="text-center fade-in-up">
+                <div class="w-16 h-16 rounded-full bg-gradient-to-br from-[#667eea] to-[#764ba2] flex items-center justify-center mx-auto mb-4 text-white text-2xl font-bold number-circle shadow-lg">
+                    1
+                </div>
+                <h4 class="text-lg font-semibold text-slate-800 mb-2">Document Upload</h4>
+                <p class="text-slate-600 text-sm">
+                    Upload your business documents. System extracts and processes text automatically.
+                </p>
+            </div>
+            
+            <div class="text-center fade-in-up" style="transition-delay: 0.1s">
+                <div class="w-16 h-16 rounded-full bg-gradient-to-br from-[#667eea] to-[#764ba2] flex items-center justify-center mx-auto mb-4 text-white text-2xl font-bold number-circle shadow-lg">
+                    2
+                </div>
+                <h4 class="text-lg font-semibold text-slate-800 mb-2">Chunking & Embedding</h4>
+                <p class="text-slate-600 text-sm">
+                    Documents are split into chunks and converted to vector embeddings for semantic search.
+                </p>
+            </div>
+            
+            <div class="text-center fade-in-up" style="transition-delay: 0.2s">
+                <div class="w-16 h-16 rounded-full bg-gradient-to-br from-[#667eea] to-[#764ba2] flex items-center justify-center mx-auto mb-4 text-white text-2xl font-bold number-circle shadow-lg">
+                    3
+                </div>
+                <h4 class="text-lg font-semibold text-slate-800 mb-2">Query Processing</h4>
+                <p class="text-slate-600 text-sm">
+                    User question is embedded and matched against document chunks using similarity search.
+                </p>
+            </div>
+            
+            <div class="text-center fade-in-up" style="transition-delay: 0.3s">
+                <div class="w-16 h-16 rounded-full bg-gradient-to-br from-[#667eea] to-[#764ba2] flex items-center justify-center mx-auto mb-4 text-white text-2xl font-bold number-circle shadow-lg">
+                    4
+                </div>
+                <h4 class="text-lg font-semibold text-slate-800 mb-2">Answer Generation</h4>
+                <p class="text-slate-600 text-sm">
+                    AI generates contextual answer using retrieved chunks, with source citations included.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Use Cases -->
+    <section class="max-w-7xl mx-auto px-6 py-16">
+        <div class="text-center mb-12 fade-in-up">
+            <h3 class="text-3xl font-bold text-slate-900 mb-4">Enterprise Use Cases</h3>
+            <p class="text-lg text-slate-600 max-w-2xl mx-auto">
+                Transform how your team interacts with business documents
+            </p>
+        </div>
+        
+        <div class="grid md:grid-cols-2 gap-6">
+            <div class="bg-white rounded-xl shadow-sm p-6 card-hover fade-in-up">
+                <h4 class="text-xl font-semibold text-slate-800 mb-2">Legal & Compliance</h4>
+                <p class="text-slate-600">
+                    Quickly find answers in contracts, policies, and regulatory documents. Verify compliance requirements with source citations.
+                </p>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-6 card-hover fade-in-up" style="transition-delay: 0.1s">
+                <h4 class="text-xl font-semibold text-slate-800 mb-2">HR & Documentation</h4>
+                <p class="text-slate-600">
+                    Answer employee questions from handbooks, procedures, and training materials. Reduce HR support tickets.
+                </p>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-6 card-hover fade-in-up">
+                <h4 class="text-xl font-semibold text-slate-800 mb-2">Technical Documentation</h4>
+                <p class="text-slate-600">
+                    Developers and support teams can instantly find solutions in technical docs, API references, and guides.
+                </p>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-6 card-hover fade-in-up" style="transition-delay: 0.1s">
+                <h4 class="text-xl font-semibold text-slate-800 mb-2">Research & Analysis</h4>
+                <p class="text-slate-600">
+                    Extract insights from research papers, reports, and market analysis. Get summaries with citations.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Benefits -->
+    <section class="max-w-7xl mx-auto px-6 py-16 bg-slate-100">
+        <div class="text-center mb-12 fade-in-up">
+            <h3 class="text-3xl font-bold text-slate-900 mb-4">Business Benefits</h3>
+        </div>
+        
+        <div class="grid md:grid-cols-3 gap-6">
+            <div class="bg-white rounded-xl shadow-sm p-6 fade-in-up">
+                <h4 class="text-xl font-semibold text-slate-800 mb-2">⚡ Faster Decision Making</h4>
+                <p class="text-slate-600">
+                    Get instant answers instead of manually searching through hundreds of documents.
+                </p>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-6 fade-in-up" style="transition-delay: 0.1s">
+                <h4 class="text-xl font-semibold text-slate-800 mb-2">🎯 Improved Accuracy</h4>
+                <p class="text-slate-600">
+                    Answers are grounded in your actual documents, not generic AI knowledge.
+                </p>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-6 fade-in-up" style="transition-delay: 0.2s">
+                <h4 class="text-xl font-semibold text-slate-800 mb-2">📊 Reduced Support Costs</h4>
+                <p class="text-slate-600">
+                    Employees find answers independently, reducing support ticket volume.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Testimonials -->
+    <section class="max-w-7xl mx-auto px-6 py-16">
+        <div class="text-center mb-12 fade-in-up">
+            <h3 class="text-3xl font-bold text-slate-900 mb-4">Trusted by Teams</h3>
+        </div>
+        
+        <div class="grid md:grid-cols-3 gap-6">
+            <div class="bg-white rounded-xl shadow-sm p-6 fade-in-up">
+                <p class="text-slate-600 mb-4 italic">"VeritasAI transformed how our legal team accesses contract information. What used to take hours now takes seconds."</p>
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-gradient-to-br from-[#667eea] to-[#764ba2] flex items-center justify-center text-white font-semibold">SM</div>
+                    <div>
+                        <div class="font-semibold text-slate-800">Sarah Mitchell</div>
+                        <div class="text-sm text-slate-500">Legal Director, TechCorp</div>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-6 fade-in-up" style="transition-delay: 0.1s">
+                <p class="text-slate-600 mb-4 italic">"Our support team can now answer 80% of questions instantly using our documentation. Game changer."</p>
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-gradient-to-br from-[#667eea] to-[#764ba2] flex items-center justify-center text-white font-semibold">JD</div>
+                    <div>
+                        <div class="font-semibold text-slate-800">James Davis</div>
+                        <div class="text-sm text-slate-500">CTO, StartupXYZ</div>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-6 fade-in-up" style="transition-delay: 0.2s">
+                <p class="text-slate-600 mb-4 italic">"The source citations are crucial for compliance. We can verify every answer with confidence."</p>
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-gradient-to-br from-[#667eea] to-[#764ba2] flex items-center justify-center text-white font-semibold">EW</div>
+                    <div>
+                        <div class="font-semibold text-slate-800">Emily Wang</div>
+                        <div class="text-sm text-slate-500">Compliance Manager, FinanceCo</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing -->
+    <section class="max-w-7xl mx-auto px-6 py-16 bg-slate-100">
+        <div class="text-center mb-12 fade-in-up">
+            <h3 class="text-3xl font-bold text-slate-900 mb-4">Simple Pricing</h3>
+            <p class="text-lg text-slate-600 max-w-2xl mx-auto">
+                Choose the plan that fits your team
+            </p>
+        </div>
+        
+        <div class="grid md:grid-cols-3 gap-6">
+            <div class="bg-white rounded-xl shadow-sm p-8 fade-in-up">
+                <h4 class="text-2xl font-bold text-slate-800 mb-2">Starter</h4>
+                <div class="mb-4">
+                    <span class="text-4xl font-bold text-slate-900">$29</span>
+                    <span class="text-slate-600">/month</span>
+                </div>
+                <ul class="space-y-3 mb-6">
+                    <li class="flex items-center gap-2 text-slate-600">
+                        <svg class="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                        </svg>
+                        Up to 100 documents
+                    </li>
+                    <li class="flex items-center gap-2 text-slate-600">
+                        <svg class="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                        </svg>
+                        1,000 queries/month
+                    </li>
+                    <li class="flex items-center gap-2 text-slate-600">
+                        <svg class="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                        </svg>
+                        Email support
+                    </li>
+                </ul>
+                <a href="/register" class="block w-full text-center px-6 py-3 border-2 border-slate-200 rounded-lg font-semibold hover:border-[#667eea] hover:text-[#667eea] transition-all">
+                    Get Started
+                </a>
+            </div>
+
+            <div class="bg-gradient-to-br from-[#667eea] to-[#764ba2] rounded-xl shadow-lg p-8 text-white fade-in-up relative" style="transition-delay: 0.1s">
+                <div class="absolute top-4 right-4 bg-white text-[#667eea] px-3 py-1 rounded-full text-xs font-semibold">Popular</div>
+                <h4 class="text-2xl font-bold mb-2">Professional</h4>
+                <div class="mb-4">
+                    <span class="text-4xl font-bold">$99</span>
+                    <span class="opacity-90">/month</span>
+                </div>
+                <ul class="space-y-3 mb-6">
+                    <li class="flex items-center gap-2 opacity-90">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                        </svg>
+                        Unlimited documents
+                    </li>
+                    <li class="flex items-center gap-2 opacity-90">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                        </svg>
+                        10,000 queries/month
+                    </li>
+                    <li class="flex items-center gap-2 opacity-90">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                        </svg>
+                        Priority support
+                    </li>
+                    <li class="flex items-center gap-2 opacity-90">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                        </svg>
+                        Advanced analytics
+                    </li>
+                </ul>
+                <a href="/register" class="block w-full text-center px-6 py-3 bg-white text-[#667eea] rounded-lg font-semibold hover:shadow-lg transition-all">
+                    Get Started
+                </a>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm p-8 fade-in-up" style="transition-delay: 0.2s">
+                <h4 class="text-2xl font-bold text-slate-800 mb-2">Enterprise</h4>
+                <div class="mb-4">
+                    <span class="text-4xl font-bold text-slate-900">Custom</span>
+                </div>
+                <ul class="space-y-3 mb-6">
+                    <li class="flex items-center gap-2 text-slate-600">
+                        <svg class="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                        </svg>
+                        Unlimited everything
+                    </li>
+                    <li class="flex items-center gap-2 text-slate-600">
+                        <svg class="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                        </svg>
+                        Dedicated support
+                    </li>
+                    <li class="flex items-center gap-2 text-slate-600">
+                        <svg class="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                        </svg>
+                        Custom integrations
+                    </li>
+                    <li class="flex items-center gap-2 text-slate-600">
+                        <svg class="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                        </svg>
+                        SLA guarantee
+                    </li>
+                </ul>
+                <a href="/register" class="block w-full text-center px-6 py-3 border-2 border-slate-200 rounded-lg font-semibold hover:border-[#667eea] hover:text-[#667eea] transition-all">
+                    Contact Sales
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="max-w-4xl mx-auto px-6 py-16">
+        <div class="text-center mb-12 fade-in-up">
+            <h3 class="text-3xl font-bold text-slate-900 mb-4">Frequently Asked Questions</h3>
+        </div>
+        
+        <div class="space-y-4">
+            <div class="bg-white rounded-xl shadow-sm p-6 fade-in-up">
+                <h4 class="text-lg font-semibold text-slate-800 mb-2">What is RAG?</h4>
+                <p class="text-slate-600">
+                    Retrieval-Augmented Generation (RAG) combines document retrieval with AI generation. It searches your documents first, then generates answers using that context.
+                </p>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-6 fade-in-up" style="transition-delay: 0.1s">
+                <h4 class="text-lg font-semibold text-slate-800 mb-2">What file formats are supported?</h4>
+                <p class="text-slate-600">
+                    We support PDF, DOCX, TXT, and Markdown files. More formats coming soon.
+                </p>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-6 fade-in-up" style="transition-delay: 0.2s">
+                <h4 class="text-lg font-semibold text-slate-800 mb-2">Is my data secure?</h4>
+                <p class="text-slate-600">
+                    Yes. Documents are encrypted at rest and in transit. Each user only accesses their own documents.
+                </p>
+            </div>
+            <div class="bg-white rounded-xl shadow-sm p-6 fade-in-up" style="transition-delay: 0.3s">
+                <h4 class="text-lg font-semibold text-slate-800 mb-2">Can I try before purchasing?</h4>
+                <p class="text-slate-600">
+                    Yes, we offer a free trial. Sign up to get started with no credit card required.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="max-w-7xl mx-auto px-6 py-20">
+        <div class="gradient-animated rounded-2xl p-12 text-center text-white relative overflow-hidden fade-in-up">
+            <div class="absolute inset-0 shimmer"></div>
+            <div class="relative z-10">
+                <h3 class="text-3xl md:text-4xl font-bold mb-4">Ready to Transform Your Documents?</h3>
+                <p class="text-xl mb-8 opacity-90 max-w-2xl mx-auto">
+                    Join teams using VeritasAI to make their documents intelligent and accessible.
+                </p>
+                <a href="/register" class="inline-block px-8 py-4 bg-white text-[#667eea] rounded-lg font-semibold text-lg hover:-translate-y-1 hover:shadow-xl transition-all duration-300 btn-pulse relative overflow-hidden group">
+                    <span class="relative z-10 flex items-center gap-2 justify-center">
+                        Start Free Trial
+                        <svg class="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                        </svg>
+                    </span>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 mt-20 fade-in-up">
+        <div class="max-w-7xl mx-auto px-6 py-12">
+            <div class="grid md:grid-cols-4 gap-8 mb-8">
+                <div>
+                    <div class="flex items-center gap-2 mb-4">
+                        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-[#667eea] to-[#764ba2] flex items-center justify-center icon-hover">
+                            <span class="text-white font-bold">V</span>
+                        </div>
+                        <span class="text-xl font-bold text-slate-800">VeritasAI</span>
+                    </div>
+                    <p class="text-slate-600 text-sm">
+                        Enterprise RAG Chat System for intelligent document interaction.
+                    </p>
+                </div>
+                <div>
+                    <h5 class="font-semibold text-slate-800 mb-4">Product</h5>
+                    <ul class="space-y-2 text-sm text-slate-600">
+                        <li><a href="#features" class="hover:text-slate-800 transition-colors">Features</a></li>
+                        <li><a href="#pricing" class="hover:text-slate-800 transition-colors">Pricing</a></li>
+                        <li><a href="#demo" class="hover:text-slate-800 transition-colors">Demo</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h5 class="font-semibold text-slate-800 mb-4">Company</h5>
+                    <ul class="space-y-2 text-sm text-slate-600">
+                        <li><a href="#" class="hover:text-slate-800 transition-colors">About</a></li>
+                        <li><a href="#" class="hover:text-slate-800 transition-colors">Blog</a></li>
+                        <li><a href="#" class="hover:text-slate-800 transition-colors">Careers</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h5 class="font-semibold text-slate-800 mb-4">Support</h5>
+                    <ul class="space-y-2 text-sm text-slate-600">
+                        <li><a href="#faq" class="hover:text-slate-800 transition-colors">FAQ</a></li>
+                        <li><a href="#" class="hover:text-slate-800 transition-colors">Documentation</a></li>
+                        <li><a href="#" class="hover:text-slate-800 transition-colors">Contact</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="border-t border-slate-200 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
+                <span class="text-slate-600 text-sm">© 2024 VeritasAI. All rights reserved.</span>
+                <div class="flex gap-6 text-slate-600 text-sm">
+                    <a href="#" class="hover:text-slate-800 transition-colors">Privacy</a>
+                    <a href="#" class="hover:text-slate-800 transition-colors">Terms</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        const observerOptions = {
+            threshold: 0.1,
+            rootMargin: '0px 0px -50px 0px'
+        };
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, observerOptions);
+        document.addEventListener('DOMContentLoaded', () => {
+            const fadeElements = document.querySelectorAll('.fade-in-up');
+            fadeElements.forEach(el => observer.observe(el));
+        });
+    </script>
+</body>
+</html>

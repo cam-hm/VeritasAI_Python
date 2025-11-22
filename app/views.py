@@ -34,9 +34,9 @@ logger = logging.getLogger(__name__)
 # Web Views (tương đương với Laravel web routes)
 def home(request):
     """
-    Home page - tương đương với Route::view('/', 'welcome') trong Laravel
+    Home page - Landing page
     """
-    return render(request, 'home.html')
+    return render(request, 'index.html')
 
 
 def login_page(request):
@@ -537,6 +537,23 @@ def chat_stream(request):
                 yield f"data: {error_data}\n\n"
                 return
             
+            # 1. Detect document name in query (for filtering chunks)
+            # Extract potential document names from the question
+            import re
+            detected_document_names = []
+            # Pattern to match common document name formats (e.g., "Tutorial_EDIT.pdf", "file.pdf")
+            document_name_pattern = r'\b([A-Za-z0-9_\-]+\.(pdf|docx|txt|md))\b'
+            matches = re.findall(document_name_pattern, last_question, re.IGNORECASE)
+            if matches:
+                detected_document_names = [match[0] for match in matches]
+                logger.info(
+                    f"Detected document names in query",
+                    extra={
+                        'document_names': detected_document_names,
+                        'question': last_question[:100],
+                    }
+                )
+            
             # 1. Generate query embedding với cache
             from django.core.cache import cache
             import hashlib
@@ -629,6 +646,26 @@ def chat_stream(request):
                         candidate_chunks = []
                         sources_data = []
                     else:
+                        # If document name detected in query, filter to matching documents
+                        if detected_document_names:
+                            matching_docs = Document.objects.filter(
+                                user=user,
+                                name__in=detected_document_names,
+                                status='completed'
+                            )
+                            if matching_docs.exists():
+                                # Prioritize chunks from detected documents
+                                matching_doc_ids = list(matching_docs.values_list('id', flat=True))
+                                logger.info(
+                                    f"Filtering search to detected documents",
+                                    extra={
+                                        'detected_names': detected_document_names,
+                                        'matching_doc_ids': matching_doc_ids,
+                                    }
+                                )
+                                # Use matching documents first, but still include others as fallback
+                                document_ids = matching_doc_ids + [did for did in document_ids if did not in matching_doc_ids]
+                        
                         placeholders = ','.join(['%s'] * len(document_ids))
                         cursor.execute(f"""
                             SELECT dc.id, dc.content, d.id as doc_id, d.name as doc_name,
@@ -654,16 +691,37 @@ def chat_stream(request):
                         sources_data = []  # For saving sources later
                         for row in rows:
                             chunk = chunks_dict[row[0]]
-                            chunk.similarity = float(row[4])  # Similarity is now 5th column (after doc_id, doc_name)
+                            similarity = float(row[4])  # Similarity is now 5th column (after doc_id, doc_name)
+                            doc_name = row[3]  # Document name
+                            
+                            # Boost similarity if document name matches detected names
+                            if detected_document_names and any(
+                                detected_name.lower() in doc_name.lower() 
+                                for detected_name in detected_document_names
+                            ):
+                                similarity = min(1.0, similarity + 0.1)  # Boost by 0.1
+                                logger.info(
+                                    f"Boosted similarity for matching document",
+                                    extra={
+                                        'doc_name': doc_name,
+                                        'original_similarity': float(row[4]),
+                                        'boosted_similarity': similarity,
+                                    }
+                                )
+                            
+                            chunk.similarity = similarity
                             chunk.doc_id = row[2]  # Document ID
-                            chunk.doc_name = row[3]  # Document name
+                            chunk.doc_name = doc_name
                             candidate_chunks.append(chunk)
                             sources_data.append({
                                 'document_id': row[2],
-                                'document_name': row[3],
+                                'document_name': doc_name,
                                 'chunk_id': row[0],
-                                'relevance_score': float(row[4])
+                                'relevance_score': similarity
                             })
+                        
+                        # Re-sort by boosted similarity
+                        candidate_chunks.sort(key=lambda x: x.similarity, reverse=True)
             
             # 3. Determine if question is related to documents (based on similarity scores)
             # Check if we have a specific document (direct or via session)
